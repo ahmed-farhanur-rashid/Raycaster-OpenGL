@@ -1,5 +1,4 @@
 # Build and binary artifacts
-build/*
 mingw64/*
 *.exe
 *.lib
