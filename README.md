@@ -16,7 +16,7 @@ A Wolfenstein-style pseudo-3D raycasting engine built with C++ and OpenGL, using
 - **Distance-based shading / fog** — toggleable fog that darkens geometry with distance
 - **WASD movement** — smooth walking, strafing, and rotation with collision detection
 - **Minimap overlay** — real-time top-down view with ray visualization
-- **Self-contained** — ships with its own MinGW64 toolchain; no system install required
+- **Self-contained** — created on a portable instance of OpenGL environment. Refer to this repo
 
 ---
 
