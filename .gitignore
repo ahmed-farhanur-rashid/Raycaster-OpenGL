@@ -27,3 +27,7 @@ mingw64/*
 
 # Build output
 build/*
+!build/.gitkeep
+
+# Ignore todos
+todo.md
