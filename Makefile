@@ -12,5 +12,10 @@ all: build/main.exe
 build/main.exe: $(SOURCES)
 	$(CC) $(INCLUDES) $(CFLAGS) $(SOURCES) $(LIBS) -o build/main.exe
 
+editor: build/map_editor.exe
+
+build/map_editor.exe: tools/map_editor.cpp src/glad.c
+	$(CC) $(INCLUDES) $(CFLAGS) tools/map_editor.cpp src/glad.c $(LIBS) -o build/map_editor.exe
+
 clean:
-	-rm -f build/main.exe
+	-rm -f build/main.exe build/map_editor.exe

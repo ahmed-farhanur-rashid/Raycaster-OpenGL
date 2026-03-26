@@ -17,10 +17,13 @@ A Wolfenstein-style pseudo-3D raycasting engine built with C++ and OpenGL, using
 - **WASD movement** — smooth walking, strafing, and rotation with collision detection
 - **Minimap overlay** — real-time top-down view with ray visualization
 - **Self-contained** — created on a portable instance of OpenGL environment. Refer to this repo
+- **Visual map editor** — standalone tool to create and edit maps with click-and-drag wall placement
 
 ---
 
 ## Controls
+
+### Raycaster
 
 | Key | Action |
 |-----|--------|
@@ -32,6 +35,20 @@ A Wolfenstein-style pseudo-3D raycasting engine built with C++ and OpenGL, using
 | Right arrow | Rotate right |
 | M | Toggle minimap |
 | L | Toggle lighting/fog |
+| ESC | Quit |
+
+### Map Editor
+
+| Input | Action |
+|-------|--------|
+| Left-click / drag | Place wall |
+| Right-click / drag | Erase wall |
+| 1-9 | Select wall type |
+| G | Toggle grid overlay |
+| C | Clear interior (keep perimeter) |
+| Ctrl+S | Save to `resource/maps/map.txt` |
+| Ctrl+Z | Undo |
+| Ctrl+Y | Redo |
 | ESC | Quit |
 
 ---
@@ -51,6 +68,15 @@ To rebuild manually:
 ```bat
 mingw64\bin\mingw32-make -f Makefile
 ```
+
+To build the map editor:
+
+```bat
+mingw64\bin\mingw32-make -f Makefile editor
+build\map_editor.exe 32
+```
+
+The argument is the map side length (map will be N×N). Default is 32, max 256.
 
 ---
 
@@ -75,6 +101,7 @@ resource/
   maps/map.txt          - ASCII map grid (0 = empty, 1-9 = wall types)
   textures/             - PNG textures (walls, floor, sky) — swap freely
 tools/
+  map_editor.cpp        - Visual map editor (standalone GLFW app)
   gen_textures.c        - Procedural texture generator (standalone)
 include/                - GLFW, GLAD, STB, KHR headers
 lib/                    - Pre-built GLFW static library (64-bit)
