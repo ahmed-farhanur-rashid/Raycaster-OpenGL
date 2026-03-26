@@ -15,7 +15,6 @@
 /* ===== constants ===== */
 #define TEX_SZ 512
 #define N_WALL_TEX 4
-#define N_SPR_TEX  3
 #define SKY_W  512
 #define SKY_H  128
 
@@ -27,7 +26,6 @@ static float*    zBuf      = nullptr;
 static unsigned int glTex, vao, vbo, prog;
 
 static uint32_t* wallTex[N_WALL_TEX];
-static uint32_t* sprTex[N_SPR_TEX];
 static uint32_t* floorTex = nullptr;
 static uint32_t  skyTex[SKY_W * SKY_H];
 
@@ -85,24 +83,14 @@ static void genTextures() {
     /* allocate texture buffers */
     for (int i = 0; i < N_WALL_TEX; i++)
         wallTex[i] = new uint32_t[TEX_SZ * TEX_SZ];
-    for (int i = 0; i < N_SPR_TEX; i++)
-        sprTex[i] = new uint32_t[TEX_SZ * TEX_SZ];
     floorTex = new uint32_t[TEX_SZ * TEX_SZ];
 
     /* all walls use the same dark dirt stones texture */
     static const char* wallPath = "resource/textures/texture_3_dark_dirt_stones.png";
-    static const char* sprPaths[N_SPR_TEX] = {
-        "resource/textures/sprite_0.png",
-        "resource/textures/sprite_1.png",
-        "resource/textures/sprite_2.png",
-    };
 
     for (int i = 0; i < N_WALL_TEX; i++)
         if (!loadTexture(wallPath, wallTex[i], TEX_SZ, TEX_SZ))
             memset(wallTex[i], 0x80, TEX_SZ * TEX_SZ * sizeof(uint32_t));
-    for (int i = 0; i < N_SPR_TEX; i++)
-        if (!loadTexture(sprPaths[i], sprTex[i], TEX_SZ, TEX_SZ))
-            memset(sprTex[i], 0, TEX_SZ * TEX_SZ * sizeof(uint32_t));
     if (!loadTexture("resource/textures/texture_3_grass_blue_flowers.png", floorTex, TEX_SZ, TEX_SZ))
         for (int i = 0; i < TEX_SZ * TEX_SZ; i++) floorTex[i] = rgba(50, 35, 15);
     if (!loadTexture("resource/textures/sky_0.png", skyTex, SKY_W, SKY_H))
@@ -253,72 +241,6 @@ static void castWalls() {
     }
 }
 
-/* ===== billboard sprites (Stage 7) ===== */
-static void drawSprites() {
-    struct SO { int i; float d; };
-    SO order[64];
-    int n = numSprites;
-    if (n > 64) n = 64;
-
-    for (int i = 0; i < n; i++) {
-        float dx = mapSprites[i].x - player.posX;
-        float dy = mapSprites[i].y - player.posY;
-        order[i] = { i, dx * dx + dy * dy };
-    }
-    /* sort far → near (simple selection sort) */
-    for (int i = 0; i < n - 1; i++)
-        for (int j = i + 1; j < n; j++)
-            if (order[j].d > order[i].d) { SO t = order[i]; order[i] = order[j]; order[j] = t; }
-
-    float invDet = 1.0f / (player.planeX * player.dirY - player.dirX * player.planeY);
-
-    for (int i = 0; i < n; i++) {
-        MapSprite& s = mapSprites[order[i].i];
-        float sx = s.x - player.posX, sy = s.y - player.posY;
-
-        float tx = invDet * ( player.dirY * sx - player.dirX * sy);
-        float ty = invDet * (-player.planeY * sx + player.planeX * sy);
-        if (ty <= 0.1f) continue;
-
-        int spScreenX = (int)((scrW / 2) * (1.0f + tx / ty));
-        int spH = abs((int)(scrH / ty));
-        if (spH < 1) continue;
-        int spW = spH;
-
-        int dsY = -spH / 2 + scrH / 2; if (dsY < 0) dsY = 0;
-        int deY =  spH / 2 + scrH / 2; if (deY >= scrH) deY = scrH - 1;
-        int dsX = -spW / 2 + spScreenX; if (dsX < 0) dsX = 0;
-        int deX =  spW / 2 + spScreenX; if (deX >= scrW) deX = scrW - 1;
-
-        int tIdx = s.type;
-        if (tIdx < 0 || tIdx >= N_SPR_TEX) tIdx = 0;
-
-        for (int stripe = dsX; stripe <= deX; stripe++) {
-            if (ty >= zBuf[stripe]) continue;      /* behind wall */
-
-            int texX = (stripe - (-spW / 2 + spScreenX)) * TEX_SZ / spW;
-            if (texX < 0 || texX >= TEX_SZ) continue;
-
-            for (int y = dsY; y <= deY; y++) {
-                int texY = (y - (-spH / 2 + scrH / 2)) * TEX_SZ / spH;
-                if (texY < 0 || texY >= TEX_SZ) continue;
-
-                uint32_t c = sprTex[tIdx][texY * TEX_SZ + texX];
-                if (((c >> 24) & 0xFF) == 0) continue; /* transparent */
-
-                if (lightingEnabled) {
-                    float shade = 1.0f / (1.0f + ty * ty * 0.04f);
-                    uint8_t r = (uint8_t)((c & 0xFF) * shade);
-                    uint8_t g = (uint8_t)(((c >> 8) & 0xFF) * shade);
-                    uint8_t b = (uint8_t)(((c >> 16) & 0xFF) * shade);
-                    c = rgba(r, g, b);
-                }
-                screenBuf[y * scrW + stripe] = c;
-            }
-        }
-    }
-}
-
 /* ===== minimap overlay (Stage 6) ===== */
 static void drawMinimap() {
     int sz = 160;
@@ -340,15 +262,6 @@ static void drawMinimap() {
                 for (int x = sx; x < ex && x < scrW; x++)
                     screenBuf[y * scrW + x] = rgba(200, 200, 200);
         }
-
-    /* sprites on minimap — uncomment when you place sprites */
-    /*for (int i = 0; i < numSprites; i++) {
-        int sx = ox + (int)(mapSprites[i].x * cw);
-        int sy = oy + (int)(mapSprites[i].y * ch);
-        for (int dy = -1; dy <= 1; dy++)
-            for (int dx = -1; dx <= 1; dx++)
-                setPixel(sx + dx, sy + dy, rgba(0, 255, 0));
-    }*/
 
     /* ray lines */
     int px = ox + (int)(player.posX * cw);
@@ -419,7 +332,6 @@ void initRenderer(int w, int h) {
 void renderFrame() {
     drawBackground();
     castWalls();
-    // drawSprites();  // uncomment when you place sprites in the map
     if (minimapEnabled) drawMinimap();
 
     glBindTexture(GL_TEXTURE_2D, glTex);
@@ -438,7 +350,6 @@ void cleanupRenderer() {
     delete[] screenBuf;
     delete[] zBuf;
     for (int i = 0; i < N_WALL_TEX; i++) delete[] wallTex[i];
-    for (int i = 0; i < N_SPR_TEX; i++) delete[] sprTex[i];
     delete[] floorTex;
     glDeleteTextures(1, &glTex);
     glDeleteVertexArrays(1, &vao);

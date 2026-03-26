@@ -37,26 +37,7 @@ bool loadMap(const char* path) {
 
     printf("Loaded map: %dx%d from %s\n", mapWidth, mapHeight, path);
 
-    // Sprite auto-placement — uncomment when you want sprites
     numSprites = 0;
-    /*
-    int interval = (mapWidth * mapHeight) / MAX_SPRITES;
-    if (interval < 4) interval = 4;
-    int count = 0;
-    for (int y = 1; y < mapHeight - 1 && numSprites < MAX_SPRITES; y++) {
-        for (int x = 1; x < mapWidth - 1 && numSprites < MAX_SPRITES; x++) {
-            if (worldMap[y][x] != 0) continue;
-            count++;
-            if (count % interval == 0) {
-                mapSprites[numSprites].x = x + 0.5f;
-                mapSprites[numSprites].y = y + 0.5f;
-                mapSprites[numSprites].type = numSprites % 3;
-                numSprites++;
-            }
-        }
-    }
-    printf("Placed %d sprites\n", numSprites);
-    */
 
     return true;
 }

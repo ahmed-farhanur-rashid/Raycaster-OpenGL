@@ -1,6 +1,6 @@
 # Raycaster
 
-A Wolfenstein-style pseudo-3D raycasting engine built with C++ and OpenGL, using GLFW for windowing and GLAD for OpenGL loading. No external dependencies beyond what's included in this repository.
+A Wolfenstein-style pseudo-3D raycasting engine built with C++ and OpenGL, using GLFW for windowing and GLAD for OpenGL loading. Self-contained — no external dependencies beyond what's included in this repository.
 
 ![Raycaster](https://img.shields.io/badge/OpenGL-3.3-blue) ![Language](https://img.shields.io/badge/C%2B%2B-11-orange) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
 
@@ -10,12 +10,12 @@ A Wolfenstein-style pseudo-3D raycasting engine built with C++ and OpenGL, using
 
 - **DDA raycasting** — fast, accurate wall detection per screen column
 - **3D projection** — perpendicular-distance wall strip rendering
-- **4 procedural wall textures** — brick, stone, blue tile, wood planks
-- **Distance-based shading / fog** — walls darken with distance
-- **Billboard sprites** — barrel, lamp, and pillar objects with depth sorting and z-buffer occlusion
+- **Textured walls** — PNG-based wall textures (hot-swappable at `resource/textures/`)
+- **Panoramic sky** — direction-mapped sky texture wrapping the horizon
+- **Textured floor** — perspective-correct floor rendering with distance fog
+- **Distance-based shading / fog** — toggleable fog that darkens geometry with distance
 - **WASD movement** — smooth walking, strafing, and rotation with collision detection
 - **Minimap overlay** — real-time top-down view with ray visualization
-- **Lighting toggle** — turn distance fog on/off at runtime
 - **Self-contained** — ships with its own MinGW64 toolchain; no system install required
 
 ---
@@ -59,38 +59,39 @@ mingw64\bin\mingw32-make -f Makefile
 ```
 src/
   main.cpp              - Entry point, game loop
-  glad.c                - OpenGL loader (generated)
+  glad.c                - OpenGL loader (auto-generated)
+  stb_impl.c            - STB library implementations (image loading)
   core/
     window.cpp/h        - GLFW window + GLAD init
     input.cpp/h         - Keyboard input, toggle state
   map/
-    map.cpp/h           - Map data and sprite definitions
+    map.cpp/h           - Map loading from ASCII grid files
   player/
     player.cpp/h        - Player state, movement, collision, rotation
   renderer/
-    map_renderer.cpp/h  - Full raycasting renderer (walls, sprites, minimap)
+    map_renderer.cpp/h  - Raycasting renderer (walls, sky, floor, minimap)
     shader.cpp/h        - GLSL shader compilation/linking
-include/                - GLFW, GLAD, GLUT headers
-lib/x64/                - Pre-built GLFW/FreeGLUT libraries (64-bit)
+resource/
+  maps/map.txt          - ASCII map grid (0 = empty, 1-9 = wall types)
+  textures/             - PNG textures (walls, floor, sky) — swap freely
+tools/
+  gen_textures.c        - Procedural texture generator (standalone)
+include/                - GLFW, GLAD, STB, KHR headers
+lib/                    - Pre-built GLFW static library (64-bit)
 mingw64/                - Bundled MinGW64 compiler toolchain
 build/                  - Output directory
 ```
 
 ---
 
-## Implementation Stages
+## Textures
 
-| Stage | Description |
-|-------|-------------|
-| 0 | OpenGL window, GLAD init, game loop with delta time |
-| 1 | 16×16 hardcoded map grid with 4 wall types |
-| 2 | DDA ray casting — per-column wall hit detection |
-| 3 | 3D projection — strip heights from perpendicular distance |
-| 4 | WASD + arrow key controls, wall collision detection |
-| 5 | Procedural textures mapped onto walls, distance-based fog |
-| 6 | Minimap overlay with player position and ray lines |
-| 7 | Billboard sprites with depth sorting and z-buffer clipping |
-| 8 | Lighting toggle (L), minimap toggle (M), clean architecture |
+Textures are loaded from `resource/textures/` at startup and can be swapped without recompiling. The included `tools/gen_textures.c` can generate procedural textures:
+
+```bat
+mingw64\bin\g++ -Iinclude tools/gen_textures.c -lm -o build\gen_textures.exe
+build\gen_textures.exe
+```
 
 ---
 
@@ -100,5 +101,5 @@ build/                  - Output directory
 |---------|---------|---------|
 | GLFW | 3.x | Window creation, input, OpenGL context |
 | GLAD | — | OpenGL 3.3 core function loader |
-| FreeGLUT | — | Fallback GL utility (linked but not used directly) |
+| STB | — | PNG image loading (`stb_image`) and writing (`stb_image_write`) |
 | MinGW64 | 15.2.0 | GCC-based compiler toolchain for Windows |
