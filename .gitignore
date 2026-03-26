@@ -18,7 +18,7 @@ mingw64/*
 Thumbs.db
 .DS_Store
 
-# Python cache
+# Python cache (if any tools included)
 __pycache__/
 *.pyc
 
