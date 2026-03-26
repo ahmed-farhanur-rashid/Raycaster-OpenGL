@@ -1,313 +1,364 @@
+/*
+ * map_renderer.cpp — GPU-accelerated raycasting renderer
+ *
+ * The entire DDA raycasting, wall/floor/sky rendering, distance fog,
+ * and minimap overlay run in a single fragment shader.  The CPU only
+ * uploads map data and textures at init, then sets per-frame uniforms.
+ */
+
 #include <glad/glad.h>
 #include "map_renderer.h"
 #include "../map/map.h"
 #include "../player/player.h"
 #include "../core/input.h"
 #include "shader.h"
-#include <cmath>
-#include <cstring>
-#include <cstdlib>
 #include <cstdint>
 #include <cstdio>
-#include <malloc.h>
+#include <cstring>
 #include <stb/stb_image.h>
 
 /* ===== constants ===== */
-#define TEX_SZ 512
+#define TEX_SZ     512
 #define N_WALL_TEX 4
-#define SKY_W  512
-#define SKY_H  128
+#define SKY_W      512
+#define SKY_H      128
 
 /* ===== module state ===== */
 static int scrW, scrH;
-static uint32_t* screenBuf = nullptr;
-static float*    zBuf      = nullptr;
+static unsigned int vao, vbo, prog;
 
-static unsigned int glTex, vao, vbo, prog;
+/* GPU texture handles */
+static unsigned int mapTexGL;       /* R8UI  – map grid                  */
+static unsigned int wallTexArray;   /* RGBA8 – 2-D array (wall layers)   */
+static unsigned int floorTexGL;     /* RGBA8 – floor                     */
+static unsigned int skyTexGL;       /* RGBA8 – sky panorama              */
 
-static uint32_t* wallTex[N_WALL_TEX];
-static uint32_t* floorTex = nullptr;
-static uint32_t  skyTex[SKY_W * SKY_H];
+/* cached uniform locations */
+static int uPlayerPos, uPlayerDir, uPlayerPlane;
+static int uScreenSize, uMapSize;
+static int uLightingEnabled, uMinimapEnabled;
 
-/* ===== shaders ===== */
+/* ================================================================== */
+/*                           GLSL shaders                             */
+/* ================================================================== */
+
 static const char* vsrc = R"(
 #version 330 core
 layout(location=0) in vec2 aPos;
 layout(location=1) in vec2 aUV;
 out vec2 uv;
-void main(){ gl_Position = vec4(aPos, 0.0, 1.0); uv = aUV; }
+void main() {
+    gl_Position = vec4(aPos, 0.0, 1.0);
+    uv = aUV;
+}
 )";
 
 static const char* fsrc = R"(
 #version 330 core
-in vec2 uv;
+in  vec2 uv;
 out vec4 fragColor;
-uniform sampler2D tex;
-void main(){ fragColor = texture(tex, uv); }
-)";
 
-/* ===== helpers ===== */
-static inline uint32_t rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255) {
-    return (uint32_t)r | ((uint32_t)g << 8) | ((uint32_t)b << 16) | ((uint32_t)a << 24);
+uniform vec2  playerPos;
+uniform vec2  playerDir;
+uniform vec2  playerPlane;
+uniform vec2  screenSize;
+uniform ivec2 mapSize;
+uniform bool  lightingEnabled;
+uniform bool  minimapEnabled;
+
+uniform usampler2D    mapTex;
+uniform sampler2DArray wallTex;
+uniform sampler2D     floorTex;
+uniform sampler2D     skyTex;
+
+#define PI        3.14159265359
+#define MAX_STEPS 256
+
+/* ---- helpers ---- */
+int getMap(int x, int y) {
+    if (x < 0 || x >= mapSize.x || y < 0 || y >= mapSize.y) return 1;
+    return int(texelFetch(mapTex, ivec2(x, y), 0).r);
 }
 
-static inline void setPixel(int x, int y, uint32_t c) {
-    if (x >= 0 && x < scrW && y >= 0 && y < scrH)
-        screenBuf[y * scrW + x] = c;
+/* DDA ray cast.  Returns wall type (>0 on hit, 0 on miss). */
+int castRay(vec2 rd, out int side, out float perpDist) {
+    int mapX = int(playerPos.x), mapY = int(playerPos.y);
+
+    float ddX = (rd.x == 0.0) ? 1e30 : abs(1.0 / rd.x);
+    float ddY = (rd.y == 0.0) ? 1e30 : abs(1.0 / rd.y);
+    float sdX, sdY;
+    int   stepX, stepY;
+
+    if (rd.x < 0.0) { stepX = -1; sdX = (playerPos.x - float(mapX)) * ddX; }
+    else             { stepX =  1; sdX = (float(mapX) + 1.0 - playerPos.x) * ddX; }
+    if (rd.y < 0.0) { stepY = -1; sdY = (playerPos.y - float(mapY)) * ddY; }
+    else             { stepY =  1; sdY = (float(mapY) + 1.0 - playerPos.y) * ddY; }
+
+    side = 0;
+    for (int i = 0; i < MAX_STEPS; i++) {
+        if (sdX < sdY) { sdX += ddX; mapX += stepX; side = 0; }
+        else            { sdY += ddY; mapY += stepY; side = 1; }
+        int cell = getMap(mapX, mapY);
+        if (cell > 0) {
+            if (side == 0) perpDist = (float(mapX) - playerPos.x + float(1 - stepX) * 0.5) / rd.x;
+            else           perpDist = (float(mapY) - playerPos.y + float(1 - stepY) * 0.5) / rd.y;
+            if (perpDist < 0.001) perpDist = 0.001;
+            return cell;
+        }
+    }
+    perpDist = 1e30;
+    return 0;
 }
 
-/* ===== texture loading from resource/textures ===== */
+/* ---- main ---- */
+void main() {
+    /* pixel coords: (0,0) = top-left */
+    float px = uv.x * screenSize.x;
+    float py = uv.y * screenSize.y;
+    int   ix = int(px);
+    int   iy = int(py);
+    int   halfH = int(screenSize.y) / 2;
 
-/* Load a PNG and resample into a dest buffer of destW x destH. */
-static bool loadTexture(const char* path, uint32_t* dest, int destW, int destH) {
-    int w, h, channels;
-    unsigned char* data = stbi_load(path, &w, &h, &channels, 4);
-    if (!data) { fprintf(stderr, "WARNING: could not load %s\n", path); return false; }
+    /* minimap bounds */
+    const int mmSz = 160, mmOx = 10, mmOy = 10;
+    bool inMinimap = minimapEnabled
+                  && ix >= mmOx && ix < mmOx + mmSz
+                  && iy >= mmOy && iy < mmOy + mmSz;
 
-    for (int y = 0; y < destH; y++)
-        for (int x = 0; x < destW; x++) {
-            int srcX = x * w / destW;
-            int srcY = y * h / destH;
-            unsigned char* px = data + (srcY * w + srcX) * 4;
-            dest[y * destW + x] = (uint32_t)px[0]
-                                | ((uint32_t)px[1] << 8)
-                                | ((uint32_t)px[2] << 16)
-                                | ((uint32_t)px[3] << 24);
+    vec3 color;
+
+    if (inMinimap) {
+        /* ============ MINIMAP ============ */
+        float worldX = float(ix - mmOx) / float(mmSz) * float(mapSize.x);
+        float worldY = float(iy - mmOy) / float(mmSz) * float(mapSize.y);
+        float cpp    = float(max(mapSize.x, mapSize.y)) / float(mmSz);
+
+        color = vec3(0.0);                     /* black background */
+
+        /* wall cells */
+        if (getMap(int(worldX), int(worldY)) > 0)
+            color = vec3(0.78);
+
+        /* 11 sample-ray lines */
+        for (int r = 0; r <= 10; r++) {
+            float rc  = 2.0 * float(r) / 10.0 - 1.0;
+            vec2  rDir = playerDir + playerPlane * rc;
+            float rLen = length(rDir);
+            if (rLen < 0.001) continue;
+
+            int rSide; float rDist;
+            castRay(rDir, rSide, rDist);
+            if (rDist > 15.0) rDist = 15.0;
+
+            vec2  d = vec2(worldX, worldY) - playerPos;
+            float t = dot(d, rDir) / dot(rDir, rDir);
+            float crossDist = abs(d.x * rDir.y - d.y * rDir.x) / rLen;
+            if (t > 0.0 && t < rDist && crossDist < cpp * 0.7)
+                color = vec3(0.0, 0.7, 0.0);
         }
 
+        /* player dot */
+        if (length(vec2(worldX, worldY) - playerPos) < cpp * 2.5)
+            color = vec3(1.0, 0.0, 0.0);
+
+        /* direction line */
+        vec2  dv = vec2(worldX, worldY) - playerPos;
+        float dt = dot(dv, playerDir);
+        float dc = abs(dv.x * playerDir.y - dv.y * playerDir.x);
+        if (dt > 0.0 && dt < 3.0 && dc < cpp * 0.7)
+            color = vec3(1.0, 1.0, 0.0);
+
+    } else {
+        /* ============ MAIN RAYCASTING ============ */
+        float camX = 2.0 * px / screenSize.x - 1.0;
+        vec2  rd   = playerDir + playerPlane * camX;
+
+        int   side;
+        float perpDist;
+        int   wallType = castRay(rd, side, perpDist);
+        bool  hit      = wallType > 0;
+
+        int lineH     = (perpDist < 1e20) ? int(screenSize.y / perpDist) : 0;
+        int drawStart = -lineH / 2 + halfH;
+        int drawEnd   =  lineH / 2 + halfH;
+
+        if (iy < drawStart || !hit) {
+            /* ---- SKY ---- */
+            float angle = atan(rd.y, rd.x);
+            float u = (angle + PI) / (2.0 * PI);
+            float v = clamp(float(iy) / float(halfH), 0.0, 1.0);
+            color = texture(skyTex, vec2(u, v)).rgb;
+
+        } else if (iy > drawEnd) {
+            /* ---- FLOOR ---- */
+            int p = iy - halfH;
+            if (p < 1) p = 1;
+            float rowDist = (0.5 * screenSize.y) / float(p);
+            vec2  f = playerPos + rowDist * rd;
+            color = texture(floorTex, fract(f)).rgb;
+
+            if (lightingEnabled) {
+                float shade = 1.0 / (1.0 + rowDist * rowDist * 0.04);
+                color *= shade;
+            }
+
+        } else {
+            /* ---- WALL ---- */
+            float wallX = (side == 0)
+                        ? playerPos.y + perpDist * rd.y
+                        : playerPos.x + perpDist * rd.x;
+            wallX = fract(wallX);
+
+            float texU = wallX;
+            if (side == 0 && rd.x > 0.0) texU = 1.0 - texU;
+            if (side == 1 && rd.y < 0.0) texU = 1.0 - texU;
+
+            float texV = clamp(float(iy - drawStart) / float(max(lineH, 1)), 0.0, 1.0);
+
+            int texIdx = wallType - 1;
+            if (texIdx < 0 || texIdx >= 4) texIdx = 0;
+
+            color = texture(wallTex, vec3(texU, texV, float(texIdx))).rgb;
+
+            /* EW-side darkening */
+            if (side == 1) color *= 0.5;
+
+            /* distance fog */
+            if (lightingEnabled) {
+                float shade = 1.0 / (1.0 + perpDist * perpDist * 0.04);
+                color *= shade;
+            }
+        }
+    }
+
+    fragColor = vec4(color, 1.0);
+}
+)";
+
+/* ================================================================== */
+/*                     texture upload helpers                         */
+/* ================================================================== */
+
+/* Load a PNG, resample to destW×destH, upload to a new GL_TEXTURE_2D. */
+static bool loadAndUploadTex2D(const char* path, unsigned int* texID,
+                                int destW, int destH,
+                                unsigned int wrapS, unsigned int wrapT) {
+    int w, h, ch;
+    unsigned char* data = stbi_load(path, &w, &h, &ch, 4);
+    if (!data) { fprintf(stderr, "WARNING: could not load %s\n", path); return false; }
+
+    unsigned char* buf = new unsigned char[destW * destH * 4];
+    for (int y = 0; y < destH; y++)
+        for (int x = 0; x < destW; x++) {
+            int sx = x * w / destW, sy = y * h / destH;
+            memcpy(&buf[(y * destW + x) * 4], &data[(sy * w + sx) * 4], 4);
+        }
     stbi_image_free(data);
+
+    glGenTextures(1, texID);
+    glBindTexture(GL_TEXTURE_2D, *texID);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapS);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapT);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, destW, destH, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, buf);
+    delete[] buf;
     return true;
 }
 
-static void genTextures() {
-    /* allocate texture buffers */
-    for (int i = 0; i < N_WALL_TEX; i++)
-        wallTex[i] = new uint32_t[TEX_SZ * TEX_SZ];
-    floorTex = new uint32_t[TEX_SZ * TEX_SZ];
-
-    /* all walls use the same dark dirt stones texture */
-    static const char* wallPath = "resource/textures/texture_3_dark_dirt_stones.png";
-
-    for (int i = 0; i < N_WALL_TEX; i++)
-        if (!loadTexture(wallPath, wallTex[i], TEX_SZ, TEX_SZ))
-            memset(wallTex[i], 0x80, TEX_SZ * TEX_SZ * sizeof(uint32_t));
-    if (!loadTexture("resource/textures/texture_3_grass_blue_flowers.png", floorTex, TEX_SZ, TEX_SZ))
-        for (int i = 0; i < TEX_SZ * TEX_SZ; i++) floorTex[i] = rgba(50, 35, 15);
-    if (!loadTexture("resource/textures/sky_0.png", skyTex, SKY_W, SKY_H))
-        for (int i = 0; i < SKY_W * SKY_H; i++) skyTex[i] = rgba(10, 12, 25);
+/* Create a 1×1 solid-colour fallback texture. */
+static void makeFallbackTex(unsigned int* texID, uint8_t r, uint8_t g, uint8_t b) {
+    unsigned char px[4] = { r, g, b, 255 };
+    glGenTextures(1, texID);
+    glBindTexture(GL_TEXTURE_2D, *texID);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, px);
 }
 
-/* ===== textured ceiling (panoramic sky) & floor ===== */
-static void drawBackground() {
-    int half = scrH / 2;
+/* ================================================================== */
+/*                           public API                               */
+/* ================================================================== */
 
-    /* --- sky: panoramic mapping based on view direction --- */
-    /* precompute per-column angle (avoids atan2f per pixel) */
-    float* colAngle = (float*)alloca(scrW * sizeof(float));
-    for (int x = 0; x < scrW; x++) {
-        float camX = 2.0f * x / (float)scrW - 1.0f;
-        float rdX  = player.dirX + player.planeX * camX;
-        float rdY  = player.dirY + player.planeY * camX;
-        float a    = atan2f(rdY, rdX);          /* -PI .. PI  */
-        colAngle[x] = (a + 3.14159265f) / (2.0f * 3.14159265f); /* 0..1 */
-    }
-    for (int y = 0; y < half; y++) {
-        float vt  = (float)y / (float)half;     /* 0 = top, 1 = horizon */
-        int skyY  = (int)(vt * (SKY_H - 1));
-        for (int x = 0; x < scrW; x++) {
-            int skyX = (int)(colAngle[x] * SKY_W) % SKY_W;
-            if (skyX < 0) skyX += SKY_W;
-            screenBuf[y * scrW + x] = skyTex[skyY * SKY_W + skyX];
-        }
-    }
-
-    /* --- floor: perspective-correct texture mapping --- */
-    float rdX0 = player.dirX - player.planeX;
-    float rdY0 = player.dirY - player.planeY;
-    float rdX1 = player.dirX + player.planeX;
-    float rdY1 = player.dirY + player.planeY;
-
-    for (int y = half + 1; y < scrH; y++) {
-        int p = y - half;
-        float rowDist = (0.5f * scrH) / (float)p;
-
-        float fStepX = rowDist * (rdX1 - rdX0) / (float)scrW;
-        float fStepY = rowDist * (rdY1 - rdY0) / (float)scrW;
-
-        float fX = player.posX + rowDist * rdX0;
-        float fY = player.posY + rowDist * rdY0;
-
-        for (int x = 0; x < scrW; x++) {
-            int tx = (int)(TEX_SZ * (fX - floorf(fX))) & (TEX_SZ - 1);
-            int ty = (int)(TEX_SZ * (fY - floorf(fY))) & (TEX_SZ - 1);
-
-            uint32_t c = floorTex[ty * TEX_SZ + tx];
-
-            if (lightingEnabled) {
-                float shade = 1.0f / (1.0f + rowDist * rowDist * 0.04f);
-                uint8_t r = (uint8_t)((c & 0xFF) * shade);
-                uint8_t g = (uint8_t)(((c >> 8) & 0xFF) * shade);
-                uint8_t b = (uint8_t)(((c >> 16) & 0xFF) * shade);
-                c = rgba(r, g, b);
-            }
-
-            screenBuf[y * scrW + x] = c;
-            fX += fStepX;
-            fY += fStepY;
-        }
-    }
-}
-
-/* ===== DDA raycasting + textured walls (Stages 2-3-5) ===== */
-static void castWalls() {
-    for (int x = 0; x < scrW; x++) {
-        float camX = 2.0f * x / (float)scrW - 1.0f;
-        float rdX  = player.dirX + player.planeX * camX;
-        float rdY  = player.dirY + player.planeY * camX;
-
-        int mapX = (int)player.posX;
-        int mapY = (int)player.posY;
-
-        float ddX = (rdX == 0) ? 1e30f : fabsf(1.0f / rdX);
-        float ddY = (rdY == 0) ? 1e30f : fabsf(1.0f / rdY);
-
-        float sdX, sdY;
-        int stepX, stepY;
-
-        if (rdX < 0) { stepX = -1; sdX = (player.posX - mapX) * ddX; }
-        else          { stepX =  1; sdX = (mapX + 1.0f - player.posX) * ddX; }
-        if (rdY < 0) { stepY = -1; sdY = (player.posY - mapY) * ddY; }
-        else          { stepY =  1; sdY = (mapY + 1.0f - player.posY) * ddY; }
-
-        int side = 0, hit = 0;
-        while (!hit) {
-            if (sdX < sdY) { sdX += ddX; mapX += stepX; side = 0; }
-            else            { sdY += ddY; mapY += stepY; side = 1; }
-            if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight) { hit = 1; break; }
-            if (worldMap[mapY][mapX] > 0) hit = 1;
-        }
-
-        float perpDist;
-        if (side == 0) perpDist = (mapX - player.posX + (1 - stepX) / 2.0f) / rdX;
-        else           perpDist = (mapY - player.posY + (1 - stepY) / 2.0f) / rdY;
-        if (perpDist < 0.001f) perpDist = 0.001f;
-        zBuf[x] = perpDist;
-
-        int lineH = (int)(scrH / perpDist);
-        int drawStart = -lineH / 2 + scrH / 2; if (drawStart < 0) drawStart = 0;
-        int drawEnd   =  lineH / 2 + scrH / 2; if (drawEnd >= scrH) drawEnd = scrH - 1;
-
-        /* texture coordinate */
-        float wallX;
-        if (side == 0) wallX = player.posY + perpDist * rdY;
-        else           wallX = player.posX + perpDist * rdX;
-        wallX -= floorf(wallX);
-
-        int texX = (int)(wallX * TEX_SZ);
-        if (side == 0 && rdX > 0) texX = TEX_SZ - texX - 1;
-        if (side == 1 && rdY < 0) texX = TEX_SZ - texX - 1;
-
-        int texIdx = worldMap[mapY][mapX] - 1;
-        if (texIdx < 0 || texIdx >= N_WALL_TEX) texIdx = 0;
-
-        float step   = (float)TEX_SZ / lineH;
-        float texPos = (drawStart - scrH / 2.0f + lineH / 2.0f) * step;
-
-        for (int y = drawStart; y <= drawEnd; y++) {
-            int texY = (int)texPos & (TEX_SZ - 1);
-            texPos += step;
-
-            uint32_t c = wallTex[texIdx][texY * TEX_SZ + texX];
-
-            /* EW-side darkening */
-            if (side == 1) {
-                uint8_t r = (c & 0xFF) >> 1;
-                uint8_t g = ((c >> 8) & 0xFF) >> 1;
-                uint8_t b = ((c >> 16) & 0xFF) >> 1;
-                c = rgba(r, g, b);
-            }
-
-            /* distance-based shading (Stage 5) */
-            if (lightingEnabled) {
-                float shade = 1.0f / (1.0f + perpDist * perpDist * 0.04f);
-                uint8_t r = (uint8_t)((c & 0xFF) * shade);
-                uint8_t g = (uint8_t)(((c >> 8) & 0xFF) * shade);
-                uint8_t b = (uint8_t)(((c >> 16) & 0xFF) * shade);
-                c = rgba(r, g, b);
-            }
-
-            screenBuf[y * scrW + x] = c;
-        }
-    }
-}
-
-/* ===== minimap overlay (Stage 6) ===== */
-static void drawMinimap() {
-    int sz = 160;
-    int ox = 10, oy = 10;
-    float cw = (float)sz / mapWidth, ch = (float)sz / mapHeight;
-
-    /* dark background */
-    for (int y = oy; y < oy + sz && y < scrH; y++)
-        for (int x = ox; x < ox + sz && x < scrW; x++)
-            screenBuf[y * scrW + x] = rgba(0, 0, 0, 255);
-
-    /* wall cells */
-    for (int my = 0; my < mapHeight; my++)
-        for (int mx = 0; mx < mapWidth; mx++) {
-            if (worldMap[my][mx] == 0) continue;
-            int sx = ox + (int)(mx * cw), sy = oy + (int)(my * ch);
-            int ex = ox + (int)((mx + 1) * cw), ey = oy + (int)((my + 1) * ch);
-            for (int y = sy; y < ey && y < scrH; y++)
-                for (int x = sx; x < ex && x < scrW; x++)
-                    screenBuf[y * scrW + x] = rgba(200, 200, 200);
-        }
-
-    /* ray lines */
-    int px = ox + (int)(player.posX * cw);
-    int py = oy + (int)(player.posY * ch);
-    for (int col = 0; col < scrW; col += scrW / 10) {
-        float camX = 2.0f * col / (float)scrW - 1.0f;
-        float rx = player.dirX + player.planeX * camX;
-        float ry = player.dirY + player.planeY * camX;
-        float dist = zBuf[col];
-        if (dist > 15) dist = 15;
-        for (float t = 0; t < dist; t += 0.3f) {
-            int x = px + (int)(rx * t * cw);
-            int y = py + (int)(ry * t * ch);
-            if (x >= ox && x < ox + sz && y >= oy && y < oy + sz)
-                setPixel(x, y, rgba(0, 180, 0));
-        }
-    }
-
-    /* player dot */
-    for (int dy = -2; dy <= 2; dy++)
-        for (int dx = -2; dx <= 2; dx++)
-            setPixel(px + dx, py + dy, rgba(255, 0, 0));
-
-    /* direction line */
-    for (int i = 0; i < 12; i++)
-        setPixel(px + (int)(player.dirX * i * 1.5f),
-                 py + (int)(player.dirY * i * 1.5f), rgba(255, 255, 0));
-}
-
-/* ===== public API ===== */
 void initRenderer(int w, int h) {
     scrW = w;
     scrH = h;
-    screenBuf = new uint32_t[w * h];
-    zBuf      = new float[w];
 
-    genTextures();
-
+    /* ---- compile GPU program ---- */
     prog = createShaderProgram(vsrc, fsrc);
 
-    glGenTextures(1, &glTex);
-    glBindTexture(GL_TEXTURE_2D, glTex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    uPlayerPos       = glGetUniformLocation(prog, "playerPos");
+    uPlayerDir       = glGetUniformLocation(prog, "playerDir");
+    uPlayerPlane     = glGetUniformLocation(prog, "playerPlane");
+    uScreenSize      = glGetUniformLocation(prog, "screenSize");
+    uMapSize         = glGetUniformLocation(prog, "mapSize");
+    uLightingEnabled = glGetUniformLocation(prog, "lightingEnabled");
+    uMinimapEnabled  = glGetUniformLocation(prog, "minimapEnabled");
 
+    /* ---- upload map grid as R8UI texture (unit 0) ---- */
+    {
+        uint8_t* md = new uint8_t[mapWidth * mapHeight];
+        for (int y = 0; y < mapHeight; y++)
+            for (int x = 0; x < mapWidth; x++)
+                md[y * mapWidth + x] = (uint8_t)worldMap[y][x];
+
+        glGenTextures(1, &mapTexGL);
+        glBindTexture(GL_TEXTURE_2D, mapTexGL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, mapWidth, mapHeight, 0,
+                     GL_RED_INTEGER, GL_UNSIGNED_BYTE, md);
+        delete[] md;
+    }
+
+    /* ---- wall textures → 2-D array texture (unit 1) ---- */
+    {
+        glGenTextures(1, &wallTexArray);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, wallTexArray);
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8,
+                     TEX_SZ, TEX_SZ, N_WALL_TEX, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        static const char* wallPath = "resource/textures/texture_3_dark_dirt_stones.png";
+        int tw, th, tc;
+        unsigned char* raw = stbi_load(wallPath, &tw, &th, &tc, 4);
+        unsigned char* buf = new unsigned char[TEX_SZ * TEX_SZ * 4];
+
+        if (raw) {
+            for (int y = 0; y < TEX_SZ; y++)
+                for (int x = 0; x < TEX_SZ; x++) {
+                    int sx = x * tw / TEX_SZ, sy = y * th / TEX_SZ;
+                    memcpy(&buf[(y * TEX_SZ + x) * 4], &raw[(sy * tw + sx) * 4], 4);
+                }
+            stbi_image_free(raw);
+        } else {
+            fprintf(stderr, "WARNING: could not load %s\n", wallPath);
+            memset(buf, 0x80, TEX_SZ * TEX_SZ * 4);
+        }
+
+        for (int i = 0; i < N_WALL_TEX; i++)
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i,
+                            TEX_SZ, TEX_SZ, 1, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+        delete[] buf;
+    }
+
+    /* ---- floor texture (unit 2) ---- */
+    if (!loadAndUploadTex2D("resource/textures/texture_3_grass_blue_flowers.png",
+                            &floorTexGL, TEX_SZ, TEX_SZ, GL_REPEAT, GL_REPEAT))
+        makeFallbackTex(&floorTexGL, 50, 35, 15);
+
+    /* ---- sky texture (unit 3) ---- */
+    if (!loadAndUploadTex2D("resource/textures/sky_0.png",
+                            &skyTexGL, SKY_W, SKY_H, GL_REPEAT, GL_CLAMP_TO_EDGE))
+        makeFallbackTex(&skyTexGL, 10, 12, 25);
+
+    /* ---- full-screen quad VAO/VBO ---- */
     float quad[] = {
         -1, -1,  0, 1,
          1, -1,  1, 1,
@@ -321,37 +372,48 @@ void initRenderer(int w, int h) {
     glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
+                          (void*)(2 * sizeof(float)));
     glEnableVertexAttribArray(1);
     glBindVertexArray(0);
 
+    /* bind sampler units (constant) */
     glUseProgram(prog);
-    glUniform1i(glGetUniformLocation(prog, "tex"), 0);
+    glUniform1i(glGetUniformLocation(prog, "mapTex"),   0);
+    glUniform1i(glGetUniformLocation(prog, "wallTex"),  1);
+    glUniform1i(glGetUniformLocation(prog, "floorTex"), 2);
+    glUniform1i(glGetUniformLocation(prog, "skyTex"),   3);
 }
 
 void renderFrame() {
-    drawBackground();
-    castWalls();
-    if (minimapEnabled) drawMinimap();
-
-    glBindTexture(GL_TEXTURE_2D, glTex);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, scrW, scrH,
-                    GL_RGBA, GL_UNSIGNED_BYTE, screenBuf);
-
     glClear(GL_COLOR_BUFFER_BIT);
     glUseProgram(prog);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, glTex);
+
+    /* per-frame uniforms */
+    glUniform2f(uPlayerPos,   player.posX,   player.posY);
+    glUniform2f(uPlayerDir,   player.dirX,   player.dirY);
+    glUniform2f(uPlayerPlane, player.planeX, player.planeY);
+    glUniform2f(uScreenSize,  (float)scrW,   (float)scrH);
+    glUniform2i(uMapSize,     mapWidth,      mapHeight);
+    glUniform1i(uLightingEnabled, lightingEnabled ? 1 : 0);
+    glUniform1i(uMinimapEnabled,  minimapEnabled  ? 1 : 0);
+
+    /* bind textures to their units */
+    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,       mapTexGL);
+    glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D_ARRAY, wallTexArray);
+    glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D,       floorTexGL);
+    glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D,       skyTexGL);
+
+    /* draw */
     glBindVertexArray(vao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
 void cleanupRenderer() {
-    delete[] screenBuf;
-    delete[] zBuf;
-    for (int i = 0; i < N_WALL_TEX; i++) delete[] wallTex[i];
-    delete[] floorTex;
-    glDeleteTextures(1, &glTex);
+    glDeleteTextures(1, &mapTexGL);
+    glDeleteTextures(1, &wallTexArray);
+    glDeleteTextures(1, &floorTexGL);
+    glDeleteTextures(1, &skyTexGL);
     glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);
     glDeleteProgram(prog);
