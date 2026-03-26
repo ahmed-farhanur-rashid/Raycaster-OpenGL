@@ -25,9 +25,6 @@ __pycache__/
 # MinGW compiler (large, downloadable separately)
 mingw64/*
 
-# Build output
-build/*
-!build/.gitkeep
-
-# Ignore todos
+# Ignore some markdown files
 todo.md
+CG_Lab_Project_Guideline latest.docx.md
