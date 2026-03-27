@@ -2,6 +2,8 @@
 #include <cstdio>
 #include <cstdlib>
 
+namespace window {
+
 void initGLFW() {
     if (!glfwInit()) {
         fprintf(stderr, "Failed to initialize GLFW\n");
@@ -35,3 +37,5 @@ void initGLAD() {
 void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
 }
+
+} // namespace window

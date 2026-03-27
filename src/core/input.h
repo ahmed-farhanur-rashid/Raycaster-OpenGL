@@ -3,9 +3,11 @@
 
 #include <GLFW/glfw3.h>
 
-void processInput(GLFWwindow* window, float dt);
+namespace input {
+    void processInput(GLFWwindow* window, float dt);
 
-extern bool minimapEnabled;
-extern bool lightingEnabled;
+    extern bool minimapEnabled;
+    extern bool lightingEnabled;
+}
 
 #endif

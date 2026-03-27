@@ -3,6 +3,8 @@
 #include <string>
 #include <cstdio>
 
+namespace map {
+
 int mapWidth  = 0;
 int mapHeight = 0;
 int worldMap[MAX_MAP_DIM][MAX_MAP_DIM];
@@ -41,3 +43,5 @@ bool loadMap(const char* path) {
 
     return true;
 }
+
+} // namespace map

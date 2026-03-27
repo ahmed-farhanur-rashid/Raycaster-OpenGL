@@ -2,7 +2,9 @@
 #include "../map/map.h"
 #include <cmath>
 
-Player player;
+namespace player {
+
+PlayerState player;
 
 void initPlayer() {
     player.posX = 1.5f;
@@ -28,11 +30,11 @@ void movePlayer(float forward, float strafe, float dt) {
     float margin = 0.2f;
 
     int checkX = (int)(newX + (moveX > 0 ? margin : -margin));
-    if (checkX >= 0 && checkX < mapWidth && worldMap[(int)player.posY][checkX] == 0)
+    if (checkX >= 0 && checkX < map::mapWidth && map::worldMap[(int)player.posY][checkX] == 0)
         player.posX = newX;
 
     int checkY = (int)(newY + (moveY > 0 ? margin : -margin));
-    if (checkY >= 0 && checkY < mapHeight && worldMap[checkY][(int)player.posX] == 0)
+    if (checkY >= 0 && checkY < map::mapHeight && map::worldMap[checkY][(int)player.posX] == 0)
         player.posY = newY;
 }
 
@@ -45,3 +47,5 @@ void rotatePlayer(float angle) {
     player.planeX = player.planeX * c - player.planeY * s;
     player.planeY = oldPlaneX * s + player.planeY * c;
 }
+
+} // namespace player

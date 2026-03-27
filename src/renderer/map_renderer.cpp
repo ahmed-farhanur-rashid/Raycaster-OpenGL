@@ -282,12 +282,14 @@ static void makeFallbackTex(unsigned int* texID, uint8_t r, uint8_t g, uint8_t b
 /*                           public API                               */
 /* ================================================================== */
 
+namespace renderer {
+
 void initRenderer(int w, int h) {
     scrW = w;
     scrH = h;
 
     /* ---- compile GPU program ---- */
-    prog = createShaderProgram(vsrc, fsrc);
+    prog = shader::createShaderProgram(vsrc, fsrc);
 
     uPlayerPos       = glGetUniformLocation(prog, "playerPos");
     uPlayerDir       = glGetUniformLocation(prog, "playerDir");
@@ -299,16 +301,16 @@ void initRenderer(int w, int h) {
 
     /* ---- upload map grid as R8UI texture (unit 0) ---- */
     {
-        uint8_t* md = new uint8_t[mapWidth * mapHeight];
-        for (int y = 0; y < mapHeight; y++)
-            for (int x = 0; x < mapWidth; x++)
-                md[y * mapWidth + x] = (uint8_t)worldMap[y][x];
+        uint8_t* md = new uint8_t[map::mapWidth * map::mapHeight];
+        for (int y = 0; y < map::mapHeight; y++)
+            for (int x = 0; x < map::mapWidth; x++)
+                md[y * map::mapWidth + x] = (uint8_t)map::worldMap[y][x];
 
         glGenTextures(1, &mapTexGL);
         glBindTexture(GL_TEXTURE_2D, mapTexGL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, mapWidth, mapHeight, 0,
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, map::mapWidth, map::mapHeight, 0,
                      GL_RED_INTEGER, GL_UNSIGNED_BYTE, md);
         delete[] md;
     }
@@ -390,13 +392,13 @@ void renderFrame() {
     glUseProgram(prog);
 
     /* per-frame uniforms */
-    glUniform2f(uPlayerPos,   player.posX,   player.posY);
-    glUniform2f(uPlayerDir,   player.dirX,   player.dirY);
-    glUniform2f(uPlayerPlane, player.planeX, player.planeY);
-    glUniform2f(uScreenSize,  (float)scrW,   (float)scrH);
-    glUniform2i(uMapSize,     mapWidth,      mapHeight);
-    glUniform1i(uLightingEnabled, lightingEnabled ? 1 : 0);
-    glUniform1i(uMinimapEnabled,  minimapEnabled  ? 1 : 0);
+    glUniform2f(uPlayerPos,   player::player.posX,   player::player.posY);
+    glUniform2f(uPlayerDir,   player::player.dirX,   player::player.dirY);
+    glUniform2f(uPlayerPlane, player::player.planeX, player::player.planeY);
+    glUniform2f(uScreenSize,  (float)scrW,            (float)scrH);
+    glUniform2i(uMapSize,     map::mapWidth,           map::mapHeight);
+    glUniform1i(uLightingEnabled, input::lightingEnabled ? 1 : 0);
+    glUniform1i(uMinimapEnabled,  input::minimapEnabled  ? 1 : 0);
 
     /* bind textures to their units */
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,       mapTexGL);
@@ -418,3 +420,5 @@ void cleanupRenderer() {
     glDeleteBuffers(1, &vbo);
     glDeleteProgram(prog);
 }
+
+} // namespace renderer

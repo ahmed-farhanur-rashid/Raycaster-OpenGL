@@ -2,6 +2,8 @@
 #include <cstdio>
 #include <cstdlib>
 
+namespace shader {
+
 unsigned int compileShader(unsigned int type, const char* src) {
     unsigned int shader = glCreateShader(type);
     glShaderSource(shader, 1, &src, NULL);
@@ -40,3 +42,5 @@ unsigned int createShaderProgram(const char* vertSrc, const char* fragSrc) {
     glDeleteShader(fs);
     return program;
 }
+
+} // namespace shader

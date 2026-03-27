@@ -1,6 +1,8 @@
 #include "input.h"
 #include "../player/player.h"
 
+namespace input {
+
 bool minimapEnabled = true;
 bool lightingEnabled = true;
 
@@ -22,12 +24,12 @@ void processInput(GLFWwindow* window, float dt) {
         strafe -= 1.0f;
 
     if (forward != 0.0f || strafe != 0.0f)
-        movePlayer(forward, strafe, dt);
+        player::movePlayer(forward, strafe, dt);
 
     if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
-        rotatePlayer(-player.rotSpeed * dt);
+        player::rotatePlayer(-player::player.rotSpeed * dt);
     if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
-        rotatePlayer(player.rotSpeed * dt);
+        player::rotatePlayer(player::player.rotSpeed * dt);
 
     bool mNow = glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS;
     if (mNow && !mKeyWasPressed) minimapEnabled = !minimapEnabled;
@@ -37,3 +39,5 @@ void processInput(GLFWwindow* window, float dt) {
     if (lNow && !lKeyWasPressed) lightingEnabled = !lightingEnabled;
     lKeyWasPressed = lNow;
 }
+
+} // namespace input

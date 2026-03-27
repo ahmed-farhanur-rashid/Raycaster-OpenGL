@@ -12,19 +12,19 @@ const int SCREEN_W = 800;
 const int SCREEN_H = 600;
 
 int main() {
-    initGLFW();
-    GLFWwindow* window = createWindow(SCREEN_W, SCREEN_H, "Raycaster");
-    initGLAD();
+    window::initGLFW();
+    GLFWwindow* window = window::createWindow(SCREEN_W, SCREEN_H, "Raycaster");
+    window::initGLAD();
     glViewport(0, 0, SCREEN_W, SCREEN_H);
 
-    if (!loadMap("resource/maps/map.txt")) {
+    if (!map::loadMap("resource/maps/map.txt")) {
         fprintf(stderr, "Could not load map, exiting.\n");
         glfwTerminate();
         return -1;
     }
 
-    initPlayer();
-    initRenderer(SCREEN_W, SCREEN_H);
+    player::initPlayer();
+    renderer::initRenderer(SCREEN_W, SCREEN_H);
 
     printf("=== Raycaster Controls ===\n");
     printf("W/S or Up/Down   - Move forward/backward\n");
@@ -43,15 +43,15 @@ int main() {
         lastTime = now;
         if (dt > 0.05f) dt = 0.05f;
 
-        processInput(window, dt);
+        input::processInput(window, dt);
 
-        renderFrame();
+        renderer::renderFrame();
 
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
-    cleanupRenderer();
+    renderer::cleanupRenderer();
     glfwTerminate();
     return 0;
 }
