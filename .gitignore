@@ -25,5 +25,5 @@ __pycache__/
 mingw64/*
 
 # Ignore some markdown files
-todo.md
+
 CG_Lab_Project_Guideline latest.docx.md
