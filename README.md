@@ -102,7 +102,7 @@ resource/
   textures/             - PNG textures (walls, floor, sky) — swap freely
 tools/
   map_editor.cpp        - Visual map editor (standalone GLFW app)
-  gen_textures.c        - Procedural texture generator (standalone)
+  texture_editor.cpp    - Pixel art texture editor (standalone GLFW app)
 include/                - GLFW, GLAD, STB, KHR headers
 lib/                    - Pre-built GLFW static library (64-bit)
 mingw64/                - Bundled MinGW64 compiler toolchain
@@ -113,11 +113,11 @@ build/                  - Output directory
 
 ## Textures
 
-Textures are loaded from `resource/textures/` at startup and can be swapped without recompiling. The included `tools/gen_textures.c` can generate procedural textures:
+Textures are loaded from `resource/textures/` at startup and can be swapped without recompiling. Use the texture editor to create custom textures:
 
 ```bat
-mingw64\bin\g++ -Iinclude tools/gen_textures.c -lm -o build\gen_textures.exe
-build\gen_textures.exe
+mingw64\bin\mingw32-make texeditor
+build\texture_editor.exe 128
 ```
 
 ---
