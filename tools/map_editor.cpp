@@ -5,8 +5,9 @@
  *         size = side length (map will be size × size), default 32, max 256
  *
  * Controls:
- *   Left-click / drag   — place wall (current brush type)
- *   Right-click / drag   — erase wall (set to 0)
+ *   Left-click / drag   — place wall (DRAW mode) or erase (ERASE mode)
+ *   Right-click / drag   — erase wall (always)
+ *   E                    — toggle DRAW / ERASE mode
  *   1-9                  — select wall type
  *   G                    — toggle grid overlay
  *   C                    — clear interior (keep perimeter)
@@ -38,6 +39,7 @@ static int grid[MAX_DIM][MAX_DIM];
 /* ---- editor state ---- */
 static int  brushType  = 1;         /* wall type 1-9                     */
 static bool showGrid   = true;      /* grid overlay toggle               */
+static bool eraserMode = false;     /* E key toggles DRAW / ERASE        */
 static bool painting   = false;     /* left mouse dragging               */
 static bool erasing    = false;     /* right mouse dragging              */
 static int  lastCellX  = -1, lastCellY = -1; /* for drag de-dup */
@@ -238,10 +240,16 @@ static void render() {
 
     /* brush indicator (HUD) */
     float hx = WINDOW_SIZE - 40.0f, hy = 8.0f;
-    drawRect(hx, hy, 30.0f, 30.0f, 0.2f, 0.2f, 0.2f);
-    float br, bg, bb;
-    wallColor(brushType, br, bg, bb);
-    drawRect(hx + 3, hy + 3, 24.0f, 24.0f, br, bg, bb);
+    if (eraserMode) {
+        /* red border to indicate eraser mode */
+        drawRect(hx, hy, 30.0f, 30.0f, 0.8f, 0.15f, 0.15f);
+        drawRect(hx + 3, hy + 3, 24.0f, 24.0f, 0.12f, 0.12f, 0.14f);
+    } else {
+        drawRect(hx, hy, 30.0f, 30.0f, 0.2f, 0.2f, 0.2f);
+        float br, bg, bb;
+        wallColor(brushType, br, bg, bb);
+        drawRect(hx + 3, hy + 3, 24.0f, 24.0f, br, bg, bb);
+    }
 }
 
 /* ---- input ---- */
@@ -283,7 +291,8 @@ static void mouseButtonCB(GLFWwindow* w, int button, int action, int mods) {
         if (action == GLFW_PRESS) {
             painting = true;
             pushUndo();
-            if (!isPerimeter(cx, cy)) grid[cy][cx] = brushType;
+            int value = eraserMode ? 0 : brushType;
+            if (!isPerimeter(cx, cy)) grid[cy][cx] = value;
             lastCellX = cx; lastCellY = cy;
         } else {
             painting = false;
@@ -310,7 +319,7 @@ static void cursorPosCB(GLFWwindow* w, double mx, double my) {
     cellFromMouse(w, cx, cy);
     if (cx == lastCellX && cy == lastCellY) return;
 
-    int value = painting ? brushType : 0;
+    int value = painting ? (eraserMode ? 0 : brushType) : 0;
     if (lastCellX >= 0)
         paintLine(lastCellX, lastCellY, cx, cy, value);
     else if (!isPerimeter(cx, cy))
@@ -333,6 +342,10 @@ static void keyCB(GLFWwindow* w, int key, int scancode, int action, int mods) {
     bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
 
     switch (key) {
+        case GLFW_KEY_E:
+            eraserMode = !eraserMode;
+            printf("Mode: %s\n", eraserMode ? "ERASE" : "DRAW");
+            break;
         case GLFW_KEY_G:
             showGrid = !showGrid;
             break;
@@ -377,8 +390,9 @@ int main(int argc, char** argv) {
     printf("=== Raycaster Map Editor ===\n");
     printf("Map size: %d x %d\n", mapSz, mapSz);
     printf("Controls:\n");
-    printf("  Left-click/drag  — place wall\n");
-    printf("  Right-click/drag — erase wall\n");
+    printf("  Left-click/drag  — place wall (DRAW) or erase (ERASE)\n");
+    printf("  Right-click/drag — erase wall (always)\n");
+    printf("  E                — toggle DRAW / ERASE mode\n");
     printf("  1-9              — select wall type\n");
     printf("  G                — toggle grid\n");
     printf("  C                — clear interior\n");
@@ -428,8 +442,8 @@ int main(int argc, char** argv) {
         render();
 
         /* update title with brush info */
-        snprintf(title, sizeof(title), "Map Editor  [%dx%d]  brush: %d",
-                 mapSz, mapSz, brushType);
+        snprintf(title, sizeof(title), "Map Editor  [%dx%d]  %s  brush: %d",
+                 mapSz, mapSz, eraserMode ? "ERASE" : "DRAW", brushType);
         glfwSetWindowTitle(window, title);
 
         glfwSwapBuffers(window);
