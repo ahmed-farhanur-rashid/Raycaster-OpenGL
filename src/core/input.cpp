@@ -9,11 +9,13 @@ bool lightingEnabled = true;
 static bool lKeyWasPressed = false;
 static bool mKeyWasPressed = false;
 
-void processInput(GLFWwindow* window, float dt) {
+void processInput(GLFWwindow* window, float deltaTime) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    float forward = 0.0f, strafe = 0.0f;
+    float forward = 0.0f;
+    float strafe = 0.0f;
+    
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
         forward += 1.0f;
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
@@ -24,12 +26,12 @@ void processInput(GLFWwindow* window, float dt) {
         strafe -= 1.0f;
 
     if (forward != 0.0f || strafe != 0.0f)
-        player::movePlayer(forward, strafe, dt);
+        player::movePlayer(forward, strafe, deltaTime);
 
     if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
-        player::rotatePlayer(-player::player.rotSpeed * dt);
+        player::rotatePlayer(-player::player.rotSpeed * deltaTime);
     if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
-        player::rotatePlayer(player::player.rotSpeed * dt);
+        player::rotatePlayer(player::player.rotSpeed * deltaTime);
 
     bool mNow = glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS;
     if (mNow && !mKeyWasPressed) minimapEnabled = !minimapEnabled;

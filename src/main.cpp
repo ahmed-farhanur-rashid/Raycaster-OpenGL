@@ -39,11 +39,11 @@ int main() {
 
     while (!glfwWindowShouldClose(window)) {
         double now = glfwGetTime();
-        float dt = (float)(now - lastTime);
+        float deltaTime = (float)(now - lastTime);
         lastTime = now;
-        if (dt > 0.05f) dt = 0.05f;
+        if (deltaTime > 0.05f) deltaTime = 0.05f;
 
-        input::processInput(window, dt);
+        input::processInput(window, deltaTime);
 
         renderer::renderFrame();
 
