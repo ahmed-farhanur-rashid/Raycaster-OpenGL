@@ -7,7 +7,7 @@ namespace map {
 
 int mapWidth  = 0;
 int mapHeight = 0;
-int worldMap[MAX_MAP_DIM][MAX_MAP_DIM];
+int worldMap[MAX_MAP_DIMENSION][MAX_MAP_DIMENSION];
 
 MapSprite mapSprites[MAX_SPRITES];
 int numSprites = 0;
@@ -21,10 +21,10 @@ bool loadMap(const char* path) {
 
     int row = 0;
     std::string line;
-    while (std::getline(f, line) && row < MAX_MAP_DIM) {
+    while (std::getline(f, line) && row < MAX_MAP_DIMENSION) {
         if (line.empty()) continue;
         int cols = (int)line.size();
-        if (cols > MAX_MAP_DIM) cols = MAX_MAP_DIM;
+        if (cols > MAX_MAP_DIMENSION) cols = MAX_MAP_DIMENSION;
         if (cols > mapWidth) mapWidth = cols;
         for (int x = 0; x < cols; x++) {
             char c = line[x];
