@@ -17,8 +17,8 @@ void initPlayer() {
     player.rotSpeed = 2.5f;
 }
 
-void movePlayer(float forward, float strafe, float dt) {
-    float speed = player.moveSpeed * dt;
+void movePlayer(float forward, float strafe, float deltaTime) {
+    float speed = player.moveSpeed * deltaTime;
     float rightX = -player.dirY;
     float rightY = player.dirX;
     float moveX = player.dirX * forward + rightX * strafe;
@@ -39,10 +39,16 @@ void movePlayer(float forward, float strafe, float dt) {
 }
 
 void rotatePlayer(float angle) {
-    float c = cosf(angle), s = sinf(angle);
+
+    // Formula to rotate a vector (x, y) by an angle θ:
+    //x' = x cosθ − y sinθ  
+    //y' = x sinθ + y cosθ
+
+    float c = cosf(angle);
+    float s = sinf(angle);
     float oldDirX = player.dirX;
     player.dirX = player.dirX * c - player.dirY * s;
-    player.dirY = oldDirX * s + player.dirY * c;
+    player.dirY = oldDirX * s + player.dirY * c; // we change player.dirX before calculating player.dirY, so we need to store the old value in a temporary variable
     float oldPlaneX = player.planeX;
     player.planeX = player.planeX * c - player.planeY * s;
     player.planeY = oldPlaneX * s + player.planeY * c;

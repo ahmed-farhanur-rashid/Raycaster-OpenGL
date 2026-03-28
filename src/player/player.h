@@ -13,7 +13,7 @@ namespace player {
     extern PlayerState player;
 
     void initPlayer();
-    void movePlayer(float forward, float strafe, float dt);
+    void movePlayer(float forward, float strafe, float deltaTime);
     void rotatePlayer(float angle);
 }
 
