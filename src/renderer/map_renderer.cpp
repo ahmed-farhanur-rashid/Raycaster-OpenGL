@@ -38,7 +38,7 @@ static unsigned int spriteTexArray; // RGBA8 2D array — one layer per sprite t
 static int uPlayerPos, uPlayerDir, uPlayerPlane;
 static int uScreenSize, uMapSize;
 static int uLightingEnabled, uMinimapEnabled;
-static int uPitchOffset;   // <-- ADD
+static int uPlayerHeight;
 static int uSpritePos, uSpriteType, uNumSprites;
 
 /* ================================================================== */
@@ -68,7 +68,7 @@ uniform vec2  screenSize;
 uniform ivec2 mapSize;
 uniform bool  lightingEnabled;
 uniform bool  minimapEnabled;
-uniform float pitchOffset;      // <-- ADD
+uniform float playerHeight;   // Player's Z position (jumping)
 
 uniform usampler2D    mapTex;
 uniform sampler2DArray wallTex;
@@ -126,7 +126,7 @@ void main() {
     int   ix = int(px);
     int   iy = int(py);
     int   halfH = int(screenSize.y) / 2;
-    int   horizon = halfH + int(pitchOffset);
+    int   horizon = halfH;  // Horizon at screen center (no pitch offset)
 
     /* minimap bounds */
     const int mmSz = 160, mmOx = 10, mmOy = 10;
@@ -188,8 +188,12 @@ void main() {
         bool  hit      = wallType > 0;
 
         int lineH     = (perpDist < 1e20) ? int(screenSize.y / perpDist) : 0;
-        int drawStart = -lineH / 2 + horizon;
-        int drawEnd   =  lineH / 2 + horizon;
+        
+        // Vertical offset for jumping - creates parallax effect
+        // Objects closer move more than distant objects
+        float vertOffset = (playerHeight / perpDist) * halfH;
+        int drawStart = -lineH / 2 + horizon + int(vertOffset);
+        int drawEnd   =  lineH / 2 + horizon + int(vertOffset);
 
         if (iy < drawStart || !hit) {
             /* ---- SKY ---- */
@@ -200,9 +204,18 @@ void main() {
 
         } else if (iy > drawEnd) {
             /* ---- FLOOR ---- */
+            // For floor, we need to calculate the distance this pixel represents
+            // The relationship is: iy = horizon + (screenHeight/2) / rowDist + vertOffset
+            // where vertOffset = (playerHeight / rowDist) * halfH
+            // So: iy - horizon = (halfH / rowDist) + (playerHeight * halfH / rowDist)
+            //     iy - horizon = halfH * (1 + playerHeight) / rowDist
+            // Therefore: rowDist = halfH * (1 + playerHeight) / (iy - horizon)
+            
             int p = iy - horizon;
             if (p < 1) p = 1;
-            float rowDist = (0.5 * screenSize.y) / float(p);
+            
+            // Calculate row distance with height compensation
+            float rowDist = (halfH * (1.0 + playerHeight)) / float(p);
             vec2  f = playerPos + rowDist * rd;
             color = texture(floorTex, fract(f)).rgb;
 
@@ -263,10 +276,11 @@ void main() {
             float drawEndX   = sprScreenX + sprW * 0.5;
             if (px < drawStartX || px >= drawEndX) continue;
 
-            // Sprite vertical position adjusted for player height (jumping)
-            // Sprites are centered on horizon line, same as wall strips
-            float drawStartY = -sprH * 0.5 + horizon;
-            float drawEndY   = sprH * 0.5 + horizon;
+            // Sprite vertical position with parallax effect
+            // Sprites shift based on distance - closer sprites move more
+            float sprVertOffset = (playerHeight / transY) * halfH;
+            float drawStartY = -sprH * 0.5 + horizon + sprVertOffset;
+            float drawEndY   = sprH * 0.5 + horizon + sprVertOffset;
             if (py < drawStartY || py >= drawEndY) continue;
 
             // UV
@@ -345,7 +359,7 @@ void initRenderer(int w, int h) {
     uMapSize         = glGetUniformLocation(prog, "mapSize");
     uLightingEnabled = glGetUniformLocation(prog, "lightingEnabled");
     uMinimapEnabled  = glGetUniformLocation(prog, "minimapEnabled");
-    uPitchOffset     = glGetUniformLocation(prog, "pitchOffset");  // <-- ADD
+    uPlayerHeight    = glGetUniformLocation(prog, "playerHeight");
     uSpritePos  = glGetUniformLocation(prog, "spritePos");
     uSpriteType = glGetUniformLocation(prog, "spriteType");
     uNumSprites = glGetUniformLocation(prog, "numSprites");
@@ -503,10 +517,8 @@ void renderFrame() {
     glUniform1i(uLightingEnabled, input::lightingEnabled ? 1 : 0);
     glUniform1i(uMinimapEnabled,  input::minimapEnabled  ? 1 : 0);
 
-    // posZ (world units) → pixel offset for horizon shift
-    // Scale factor: tune this if the jump feels too subtle or too extreme
-    float pitchOffset = player::player.posZ * (float)scrH * 0.25f;
-    glUniform1f(uPitchOffset, pitchOffset);   // <-- ADD
+    // Pass player height for parallax jumping effect
+    glUniform1f(uPlayerHeight, player::player.posZ);
 
     // Sort sprites farthest first
     struct SortedSprite {
