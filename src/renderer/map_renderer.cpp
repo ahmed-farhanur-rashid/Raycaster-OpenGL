@@ -263,8 +263,10 @@ void main() {
             float drawEndX   = sprScreenX + sprW * 0.5;
             if (px < drawStartX || px >= drawEndX) continue;
 
-            float drawStartY = halfH - sprH * 0.5;
-            float drawEndY   = halfH + sprH * 0.5;
+            // Sprite vertical position adjusted for player height (jumping)
+            // Sprites are centered on horizon line, same as wall strips
+            float drawStartY = -sprH * 0.5 + horizon;
+            float drawEndY   = sprH * 0.5 + horizon;
             if (py < drawStartY || py >= drawEndY) continue;
 
             // UV
