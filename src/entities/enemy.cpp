@@ -172,6 +172,7 @@ void updateEnemies(float deltaTime) {
                         // Shoot at player
                         e.shootCooldown -= deltaTime;
                         if (e.shootCooldown <= 0.0f && canSee) {
+                            printf("Enemy %d shooting at player!\n", i);
                             projectile::spawnProjectile(
                                 e.x, e.y, 0.0f,
                                 dx/len, dy/len,

@@ -1,7 +1,9 @@
 #include "projectile.h"
 #include "../map/map.h"
 #include "enemy.h"
+#include "../player/player.h"
 #include "../renderer/sprite_registry.h"
+#include "../renderer/hud_renderer.h"
 #include <cstdio>
 #include <cmath>
 
@@ -34,7 +36,7 @@ void spawnProjectile(float x, float y, float z, float dirX, float dirY, bool fro
     p.z = z;
     p.dirX = dirX;
     p.dirY = dirY;
-    p.speed = fromPlayer ? 15.0f : 8.0f;  // Player bullets faster than enemy bullets
+    p.speed = fromPlayer ? 15.0f : 4.0f;  // Enemy bullets much slower (easy to dodge)
     p.active = true;
     p.spriteType = fromPlayer ? sprite::getSpriteIndex("bullet") : sprite::getSpriteIndex("bullet");
     p.fromPlayer = fromPlayer;
@@ -69,20 +71,34 @@ void updateProjectiles(float deltaTime) {
                 break;
             }
             
-            // Check enemy collision
-            for (int e = 0; e < enemy::numEnemies; e++) {
-                if (enemy::enemies[e].state == enemy::State::Dead) continue;
-                
-                float dx = enemy::enemies[e].x - nx;
-                float dy = enemy::enemies[e].y - ny;
+            // Check enemy collision (only player bullets can hit enemies)
+            if (p.fromPlayer) {
+                for (int e = 0; e < enemy::numEnemies; e++) {
+                    if (enemy::enemies[e].state == enemy::State::Dead) continue;
+                    
+                    float dx = enemy::enemies[e].x - nx;
+                    float dy = enemy::enemies[e].y - ny;
+                    float dist = sqrtf(dx*dx + dy*dy);
+                    
+                    if (dist < 0.5f) {  // Enemy hit radius
+                        printf("Bullet hit enemy %d at distance %.2f\n", e, dist);
+                        enemy::damageEnemy(e, 10);  // 10 damage per bullet (10 hits to kill)
+                        p.active = false;
+                        hitSomething = true;
+                        break;
+                    }
+                }
+            } else {
+                // Enemy bullet - check player collision
+                float dx = player::player.posX - nx;
+                float dy = player::player.posY - ny;
                 float dist = sqrtf(dx*dx + dy*dy);
                 
-                if (dist < 0.5f) {  // Enemy hit radius
-                    printf("Bullet hit enemy %d at distance %.2f\n", e, dist);
-                    enemy::damageEnemy(e, 10);  // 10 damage per bullet (10 hits to kill)
+                if (dist < 0.3f) {  // Player hit radius
+                    printf("Enemy bullet hit player!\n");
+                    hud::triggerDamageFlash();  // Flash screen red
                     p.active = false;
                     hitSomething = true;
-                    break;
                 }
             }
             

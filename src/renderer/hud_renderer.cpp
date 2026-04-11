@@ -12,6 +12,7 @@ static int scrW, scrH;
 static float bobTimer  = 0.0f;
 static float bobOffset = 0.0f;  // NDC units
 static float recoilOffset = 0.0f;  // Weapon recoil (positive = closer to camera)
+static float damageFlashAlpha = 0.0f;  // Red flash when hit
 
 // ---- Shaders ----
 static const char* vsrc = R"(
@@ -110,6 +111,10 @@ void updateRecoil(bool isFiring, float deltaTime) {
     }
 }
 
+void triggerDamageFlash() {
+    damageFlashAlpha = 0.5f;  // Start with semi-transparent red overlay
+}
+
 void renderWeapon() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -138,6 +143,72 @@ void renderWeapon() {
     glBindVertexArray(0);
 
     glDisable(GL_BLEND);
+
+    // Render damage flash overlay
+    if (damageFlashAlpha > 0.0f) {
+        glDisable(GL_DEPTH_TEST);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        
+        // Draw full-screen red quad
+        float flashVerts[] = {
+            -1.0f, -1.0f,
+             1.0f, -1.0f,
+            -1.0f,  1.0f,
+             1.0f,  1.0f,
+        };
+        
+        GLuint flashVAO, flashVBO;
+        glGenVertexArrays(1, &flashVAO);
+        glGenBuffers(1, &flashVBO);
+        glBindVertexArray(flashVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, flashVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(flashVerts), flashVerts, GL_STATIC_DRAW);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(0);
+        
+        // Simple red shader
+        static const char* flashVS = R"(
+            #version 330 core
+            layout (location = 0) in vec2 pos;
+            void main() { gl_Position = vec4(pos, 0.0, 1.0); }
+        )";
+        static const char* flashFS = R"(
+            #version 330 core
+            uniform float alpha;
+            out vec4 color;
+            void main() { color = vec4(1.0, 0.0, 0.0, alpha); }
+        )";
+        
+        static GLuint flashProg = 0;
+        if (flashProg == 0) {
+            GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+            glShaderSource(vs, 1, &flashVS, nullptr);
+            glCompileShader(vs);
+            GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+            glShaderSource(fs, 1, &flashFS, nullptr);
+            glCompileShader(fs);
+            flashProg = glCreateProgram();
+            glAttachShader(flashProg, vs);
+            glAttachShader(flashProg, fs);
+            glLinkProgram(flashProg);
+            glDeleteShader(vs);
+            glDeleteShader(fs);
+        }
+        
+        glUseProgram(flashProg);
+        GLint loc = glGetUniformLocation(flashProg, "alpha");
+        glUniform1f(loc, damageFlashAlpha);
+        
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        
+        glDeleteVertexArrays(1, &flashVAO);
+        glDeleteBuffers(1, &flashVBO);
+        
+        // Fade out
+        damageFlashAlpha -= 0.02f;
+        if (damageFlashAlpha < 0.0f) damageFlashAlpha = 0.0f;
+    }
 }
 
 void cleanupHUD() {

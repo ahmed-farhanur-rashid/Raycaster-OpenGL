@@ -502,6 +502,9 @@ void renderFrame() {
     for (int i = 0; i < projectile::numProjectiles && totalSprites < MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES; i++) {
         if (!projectile::projectiles[i].active) continue;
         allSprites[totalSprites++] = { projectile::projectiles[i].x, projectile::projectiles[i].y, projectile::projectiles[i].spriteType };
+        if (!projectile::projectiles[i].fromPlayer) {
+            printf("Rendering enemy bullet at (%.1f, %.1f)\n", projectile::projectiles[i].x, projectile::projectiles[i].y);
+        }
     }
 
     // Living and dead enemies (show dead bodies)
