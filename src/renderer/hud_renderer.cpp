@@ -11,6 +11,7 @@ static unsigned int prog, vao, vbo, weaponTex;
 static int scrW, scrH;
 static float bobTimer  = 0.0f;
 static float bobOffset = 0.0f;  // NDC units
+static float recoilOffset = 0.0f;  // Weapon recoil (positive = closer to camera)
 
 // ---- Shaders ----
 static const char* vsrc = R"(
@@ -93,16 +94,32 @@ void updateBob(bool isMoving, float deltaTime) {
     bobOffset = isMoving ? sinf(bobTimer) * 0.04f : 0.0f;
 }
 
+void updateRecoil(bool isFiring, float deltaTime) {
+    const float RECOIL_SPEED = 8.0f;   // How fast weapon kicks back
+    const float RECOVERY_SPEED = 16.0f;  // How fast it returns
+    const float MAX_RECOIL = 0.05f;     // Maximum recoil distance
+    
+    if (isFiring) {
+        // Kick weapon towards camera
+        recoilOffset += RECOIL_SPEED * deltaTime;
+        if (recoilOffset > MAX_RECOIL) recoilOffset = MAX_RECOIL;
+    } else {
+        // Recover to normal position
+        recoilOffset -= RECOVERY_SPEED * deltaTime;
+        if (recoilOffset < 0.0f) recoilOffset = 0.0f;
+    }
+}
+
 void renderWeapon() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Update quad with bob offset
-    // Base position is shifted down by max bob amount so weapon bobs UP from resting position
-    const float MAX_BOB = 0.04f;
+    // Update quad with bob and recoil offsets
+    // Recoil makes weapon bigger (closer to camera)
+    const float MAX_BOB = 0.1f;
     float x0 = -1.0f, x1 = 1.0f;
-    float y0 = -1.0f - MAX_BOB + bobOffset;  // Rest at -1.04, bob up to -1.0
-    float y1 = 0.5f - MAX_BOB + bobOffset; // Rest at -0.09, bob up to -0.05
+    float y0 = -1.0f - MAX_BOB + bobOffset + recoilOffset;  // Add recoil
+    float y1 = 0.5f - MAX_BOB + bobOffset + recoilOffset;   // Add recoil
     float verts[] = {
         x0, y0,   0.0f, 1.0f,
         x1, y0,   1.0f, 1.0f,

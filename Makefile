@@ -2,7 +2,7 @@ CC       = g++
 CFLAGS   = -std=c++17
 INCLUDES = -Iinclude
 LIBS     = -lglfw -lGL -ldl -lpthread -lm
-SOURCES  = src/*.cpp src/*.c src/core/*.cpp src/renderer/*.cpp src/map/*.cpp src/player/*.cpp
+SOURCES  = src/*.cpp src/*.c src/core/*.cpp src/renderer/*.cpp src/map/*.cpp src/player/*.cpp src/entities/*.cpp
 
 all: build/main
 

@@ -1,6 +1,7 @@
 #include "input.h"
 #include "../player/player.h"
 #include "../renderer/hud_renderer.h"
+#include "../entities/projectile.h"
 
 namespace input {
 
@@ -64,6 +65,30 @@ void processInput(GLFWwindow* window, float deltaTime) {
     // Update weapon bob based on movement
     bool moving = (forward != 0.0f || strafe != 0.0f);
     hud::updateBob(moving, deltaTime);
+
+    // Automatic fire with F key or left mouse
+    static float fireCooldown = 0.0f;
+    const float FIRE_RATE = 0.1f;  // 10 bullets per second (automatic)
+    
+    bool fireNow = glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS ||
+                   glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    
+    if (fireNow && fireCooldown <= 0.0f) {
+        projectile::spawnProjectile(
+            player::player.posX,
+            player::player.posY,
+            player::player.dirX,
+            player::player.dirY
+        );
+        fireCooldown = FIRE_RATE;
+    }
+    
+    if (fireCooldown > 0.0f) {
+        fireCooldown -= deltaTime;
+    }
+    
+    // Update weapon recoil
+    hud::updateRecoil(fireNow && fireCooldown > 0.0f, deltaTime);
 
     if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
         player::rotatePlayer(-player::player.rotSpeed * deltaTime);

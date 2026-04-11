@@ -11,6 +11,7 @@
 #include "../map/map.h"
 #include "../player/player.h"
 #include "../core/input.h"
+#include "../entities/projectile.h"
 #include "shader.h"
 #include <cstdint>
 #include <cstdio>
@@ -429,7 +430,7 @@ void initRenderer(int w, int h) {
     glGenTextures(1, &spriteTexArray);
     glBindTexture(GL_TEXTURE_2D_ARRAY, spriteTexArray);
     glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8,
-                 TEX_SZ, TEX_SZ, 8,   // 8 sprite types max
+                 TEX_SZ, TEX_SZ, 9,   // 9 sprite types max (added bullet)
                  0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -446,6 +447,7 @@ void initRenderer(int w, int h) {
         "resource/textures/sprite_health.png",
         "resource/textures/sprite_ammo.png",
         "resource/textures/sprite_key.png",
+        "resource/textures/sprite_bullet.png",  // Bullet projectile
     };
     int nSprites = sizeof(spritePaths) / sizeof(spritePaths[0]);
     for (int i = 0; i < nSprites; i++) {
@@ -520,19 +522,37 @@ void renderFrame() {
     // Pass player height for parallax jumping effect
     glUniform1f(uPlayerHeight, player::player.posZ);
 
-    // Sort sprites farthest first
+    // Combine map sprites and projectiles
+    int totalSprites = 0;
+    struct SpriteData {
+        float x, y;
+        int type;
+    } allSprites[MAX_SPRITES + MAX_PROJECTILES];
+
+    // Map props
+    for (int i = 0; i < map::numSprites && totalSprites < MAX_SPRITES + MAX_PROJECTILES; i++) {
+        allSprites[totalSprites++] = { map::mapSprites[i].x, map::mapSprites[i].y, map::mapSprites[i].textureId };
+    }
+
+    // Active projectiles
+    for (int i = 0; i < projectile::numProjectiles && totalSprites < MAX_SPRITES + MAX_PROJECTILES; i++) {
+        if (!projectile::projectiles[i].active) continue;
+        allSprites[totalSprites++] = { projectile::projectiles[i].x, projectile::projectiles[i].y, projectile::projectiles[i].spriteType };
+    }
+
+    // Sort farthest first
     struct SortedSprite {
         float dist;
         int   idx;
     };
-    SortedSprite sorted[MAX_SPRITES];
-    for (int i = 0; i < map::numSprites; i++) {
-        float dx = map::mapSprites[i].x - player::player.posX;
-        float dy = map::mapSprites[i].y - player::player.posY;
+    SortedSprite sorted[MAX_SPRITES + MAX_PROJECTILES];
+    for (int i = 0; i < totalSprites; i++) {
+        float dx = allSprites[i].x - player::player.posX;
+        float dy = allSprites[i].y - player::player.posY;
         sorted[i] = { dx*dx + dy*dy, i };
     }
-    // Simple insertion sort (numSprites is small)
-    for (int i = 1; i < map::numSprites; i++) {
+    // Insertion sort
+    for (int i = 1; i < totalSprites; i++) {
         SortedSprite key = sorted[i];
         int j = i - 1;
         while (j >= 0 && sorted[j].dist < key.dist) { sorted[j+1] = sorted[j]; j--; }
@@ -540,17 +560,17 @@ void renderFrame() {
     }
 
     // Upload sorted positions, types
-    float spritePosData[MAX_SPRITES * 2];
-    int   spriteTypeData[MAX_SPRITES];
-    for (int i = 0; i < map::numSprites; i++) {
+    float spritePosData[(MAX_SPRITES + MAX_PROJECTILES) * 2];
+    int   spriteTypeData[MAX_SPRITES + MAX_PROJECTILES];
+    for (int i = 0; i < totalSprites; i++) {
         int idx = sorted[i].idx;
-        spritePosData[i*2+0] = map::mapSprites[idx].x;
-        spritePosData[i*2+1] = map::mapSprites[idx].y;
-        spriteTypeData[i]    = map::mapSprites[idx].textureId;
+        spritePosData[i*2+0] = allSprites[idx].x;
+        spritePosData[i*2+1] = allSprites[idx].y;
+        spriteTypeData[i]    = allSprites[idx].type;
     }
-    glUniform2fv(uSpritePos,  map::numSprites, spritePosData);
-    glUniform1iv(uSpriteType, map::numSprites, spriteTypeData);
-    glUniform1i (uNumSprites, map::numSprites);
+    glUniform2fv(uSpritePos,  totalSprites, spritePosData);
+    glUniform1iv(uSpriteType, totalSprites, spriteTypeData);
+    glUniform1i (uNumSprites, totalSprites);
 
     /* bind textures to their units */
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,       mapTexGL);

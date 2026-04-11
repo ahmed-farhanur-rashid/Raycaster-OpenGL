@@ -8,6 +8,7 @@
 #include "player/player.h"
 #include "renderer/map_renderer.h"
 #include "renderer/hud_renderer.h"
+#include "entities/projectile.h"
 
 const int SCREEN_W = 800;
 const int SCREEN_H = 600;
@@ -46,6 +47,7 @@ int main() {
         if (deltaTime > 0.05f) deltaTime = 0.05f;
 
         input::processInput(window, deltaTime);
+        projectile::updateProjectiles(deltaTime);
 
         renderer::renderFrame();
         hud::renderWeapon();
