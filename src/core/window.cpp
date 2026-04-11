@@ -23,6 +23,7 @@ GLFWwindow* createWindow(int width, int height, const char* title) {
         exit(EXIT_FAILURE);
     }
     glfwMakeContextCurrent(window);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
     return window;
 }
