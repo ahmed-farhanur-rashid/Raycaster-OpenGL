@@ -7,6 +7,7 @@
 #include "map/map.h"
 #include "player/player.h"
 #include "renderer/map_renderer.h"
+#include "renderer/hud_renderer.h"
 
 const int SCREEN_W = 800;
 const int SCREEN_H = 600;
@@ -25,6 +26,7 @@ int main() {
 
     player::initPlayer();
     renderer::initRenderer(SCREEN_W, SCREEN_H);
+    hud::initHUD(SCREEN_W, SCREEN_H);
 
     printf("=== Raycaster Controls ===\n");
     printf("W/S or Up/Down   - Move forward/backward\n");
@@ -46,12 +48,14 @@ int main() {
         input::processInput(window, deltaTime);
 
         renderer::renderFrame();
+        hud::renderWeapon();
 
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
     renderer::cleanupRenderer();
+    hud::cleanupHUD();
     glfwTerminate();
     return 0;
 }

@@ -1,5 +1,6 @@
 #include "input.h"
 #include "../player/player.h"
+#include "../renderer/hud_renderer.h"
 
 namespace input {
 
@@ -59,6 +60,10 @@ void processInput(GLFWwindow* window, float deltaTime) {
 
     if (forward != 0.0f || strafe != 0.0f)
         player::movePlayer(forward, strafe, deltaTime);
+
+    // Update weapon bob based on movement
+    bool moving = (forward != 0.0f || strafe != 0.0f);
+    hud::updateBob(moving, deltaTime);
 
     if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
         player::rotatePlayer(-player::player.rotSpeed * deltaTime);
