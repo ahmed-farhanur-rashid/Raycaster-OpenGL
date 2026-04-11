@@ -9,6 +9,7 @@
 #include "renderer/map_renderer.h"
 #include "renderer/hud_renderer.h"
 #include "entities/projectile.h"
+#include "entities/enemy.h"
 
 const int SCREEN_W = 800;
 const int SCREEN_H = 600;
@@ -19,15 +20,19 @@ int main() {
     window::initGLAD();
     glViewport(0, 0, SCREEN_W, SCREEN_H);
 
+    player::initPlayer();
+    renderer::initRenderer(SCREEN_W, SCREEN_H);
+    hud::initHUD(SCREEN_W, SCREEN_H);
+
+    // Load map AFTER sprite registry is initialized
     if (!map::loadMap("resource/maps/map.txt")) {
         fprintf(stderr, "Could not load map, exiting.\n");
         glfwTerminate();
         return -1;
     }
-
-    player::initPlayer();
-    renderer::initRenderer(SCREEN_W, SCREEN_H);
-    hud::initHUD(SCREEN_W, SCREEN_H);
+    
+    // Upload map texture to GPU after loading
+    renderer::uploadMapTexture();
 
     printf("=== Raycaster Controls ===\n");
     printf("W/S or Up/Down   - Move forward/backward\n");
@@ -48,6 +53,7 @@ int main() {
 
         input::processInput(window, deltaTime);
         projectile::updateProjectiles(deltaTime);
+        enemy::updateEnemies(deltaTime);
 
         renderer::renderFrame();
         hud::renderWeapon();

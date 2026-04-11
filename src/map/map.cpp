@@ -1,4 +1,6 @@
 #include "map.h"
+#include "../entities/enemy.h"
+#include "../renderer/sprite_registry.h"
 #include <fstream>
 #include <string>
 #include <cstdio>
@@ -57,9 +59,8 @@ bool loadMap(const char* path) {
                 worldMap[row][x] = 0;
             }
             else if (c == 'E') {  // Enemy
-                if (numSprites < MAX_SPRITES) {
-                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 4, 4 };
-                }
+                // Spawn enemy entity with named sprite
+                enemy::spawnEnemy((float)x + 0.5f, (float)row + 0.5f, "enemy");
                 worldMap[row][x] = 0;
             }
             else if (c == 'H') {  // Health

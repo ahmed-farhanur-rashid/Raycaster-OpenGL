@@ -1,5 +1,7 @@
 #include "projectile.h"
 #include "../map/map.h"
+#include "enemy.h"
+#include "../renderer/sprite_registry.h"
 #include <cstdio>
 #include <cmath>
 
@@ -9,7 +11,6 @@ Projectile projectiles[MAX_PROJECTILES];
 int numProjectiles = 0;
 
 static const float PROJECTILE_SPEED = 15.0f;  // world units per second (much faster)
-static const int BULLET_SPRITE = 8;          // sprite type index (needs new texture slot)
 
 void spawnProjectile(float x, float y, float dirX, float dirY) {
     // Find inactive slot or create new
@@ -34,7 +35,7 @@ void spawnProjectile(float x, float y, float dirX, float dirY) {
     p.dirY = dirY;
     p.speed = PROJECTILE_SPEED;
     p.active = true;
-    p.spriteType = BULLET_SPRITE;
+    p.spriteType = sprite::getSpriteIndex("bullet");
 }
 
 void updateProjectiles(float deltaTime) {
@@ -42,44 +43,52 @@ void updateProjectiles(float deltaTime) {
         Projectile& p = projectiles[i];
         if (!p.active) continue;
         
-        // Move projectile
-        float nx = p.x + p.dirX * p.speed * deltaTime;
-        float ny = p.y + p.dirY * p.speed * deltaTime;
+        // Move projectile with multiple collision checks along path
+        float totalDist = p.speed * deltaTime;
+        int steps = (int)(totalDist / 0.2f) + 1;  // Check every 0.2 units
+        float stepSize = totalDist / steps;
         
-        // Check wall collision
-        int mapX = (int)nx;
-        int mapY = (int)ny;
+        bool hitSomething = false;
         
-        if (mapX < 0 || mapX >= map::mapWidth || 
-            mapY < 0 || mapY >= map::mapHeight ||
-            map::worldMap[mapY][mapX] > 0) {
-            // Hit wall - deactivate
-            p.active = false;
-            continue;
-        }
-        
-        // TODO: Add enemy collision check when enemy system is implemented
-        
-        // Check sprite collision (map props)
-        bool hitSprite = false;
-        for (int s = 0; s < map::numSprites; s++) {
-            float dx = map::mapSprites[s].x - nx;
-            float dy = map::mapSprites[s].y - ny;
-            float dist = sqrtf(dx*dx + dy*dy);
+        for (int step = 0; step < steps && !hitSomething; step++) {
+            float nx = p.x + p.dirX * stepSize;
+            float ny = p.y + p.dirY * stepSize;
             
-            if (dist < 0.4f) {  // Sprite hit radius
-                hitSprite = true;
+            // Check wall collision
+            int mapX = (int)nx;
+            int mapY = (int)ny;
+            
+            if (mapX < 0 || mapX >= map::mapWidth || 
+                mapY < 0 || mapY >= map::mapHeight ||
+                map::worldMap[mapY][mapX] > 0) {
+                // Hit wall - deactivate
+                p.active = false;
+                hitSomething = true;
                 break;
             }
+            
+            // Check enemy collision
+            for (int e = 0; e < enemy::numEnemies; e++) {
+                if (enemy::enemies[e].state == enemy::State::Dead) continue;
+                
+                float dx = enemy::enemies[e].x - nx;
+                float dy = enemy::enemies[e].y - ny;
+                float dist = sqrtf(dx*dx + dy*dy);
+                
+                if (dist < 0.5f) {  // Enemy hit radius
+                    printf("Bullet hit enemy %d at distance %.2f\n", e, dist);
+                    enemy::damageEnemy(e, 10);  // 10 damage per bullet (10 hits to kill)
+                    p.active = false;
+                    hitSomething = true;
+                    break;
+                }
+            }
+            
+            if (!hitSomething) {
+                p.x = nx;
+                p.y = ny;
+            }
         }
-        
-        if (hitSprite) {
-            p.active = false;
-            continue;
-        }
-        
-        p.x = nx;
-        p.y = ny;
     }
 }
 

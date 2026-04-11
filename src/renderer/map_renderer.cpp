@@ -12,6 +12,8 @@
 #include "../player/player.h"
 #include "../core/input.h"
 #include "../entities/projectile.h"
+#include "../entities/enemy.h"
+#include "sprite_registry.h"
 #include "shader.h"
 #include <cstdint>
 #include <cstdio>
@@ -365,22 +367,6 @@ void initRenderer(int w, int h) {
     uSpriteType = glGetUniformLocation(prog, "spriteType");
     uNumSprites = glGetUniformLocation(prog, "numSprites");
 
-    /* ---- upload map grid as R8UI texture (unit 0) ---- */
-    {
-        uint8_t* md = new uint8_t[map::mapWidth * map::mapHeight];
-        for (int y = 0; y < map::mapHeight; y++)
-            for (int x = 0; x < map::mapWidth; x++)
-                md[y * map::mapWidth + x] = (uint8_t)map::worldMap[y][x];
-
-        glGenTextures(1, &mapTexGL);
-        glBindTexture(GL_TEXTURE_2D, mapTexGL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, map::mapWidth, map::mapHeight, 0,
-                     GL_RED_INTEGER, GL_UNSIGNED_BYTE, md);
-        delete[] md;
-    }
-
     /* ---- wall textures → 2-D array texture (unit 1) ---- */
     {
         glGenTextures(1, &wallTexArray);
@@ -426,54 +412,11 @@ void initRenderer(int w, int h) {
                             &skyTexGL, SKY_W, SKY_H, GL_REPEAT, GL_CLAMP_TO_EDGE))
         makeFallbackTex(&skyTexGL, 10, 12, 25);
 
-    // Sprite texture array (unit 4)
-    glGenTextures(1, &spriteTexArray);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, spriteTexArray);
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8,
-                 TEX_SZ, TEX_SZ, 9,   // 9 sprite types max (added bullet)
-                 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    // Load sprite PNGs into layers
-    const char* spritePaths[] = {
-        "resource/textures/sprite_barrel.png",
-        "resource/textures/sprite_lamp.png",
-        "resource/textures/sprite_column.png",
-        "resource/textures/sprite_torch.png",
-        "resource/textures/sprite_enemy.png",
-        "resource/textures/sprite_health.png",
-        "resource/textures/sprite_ammo.png",
-        "resource/textures/sprite_key.png",
-        "resource/textures/sprite_bullet.png",  // Bullet projectile
-    };
-    int nSprites = sizeof(spritePaths) / sizeof(spritePaths[0]);
-    for (int i = 0; i < nSprites; i++) {
-        int sw, sh, sc;
-        unsigned char* raw = stbi_load(spritePaths[i], &sw, &sh, &sc, 4);
-        if (raw) {
-            unsigned char* buf = new unsigned char[TEX_SZ * TEX_SZ * 4];
-            for (int y = 0; y < TEX_SZ; y++)
-                for (int x = 0; x < TEX_SZ; x++) {
-                    int sx2 = x * sw / TEX_SZ, sy2 = y * sh / TEX_SZ;
-                    memcpy(&buf[(y*TEX_SZ+x)*4], &raw[(sy2*sw+sx2)*4], 4);
-                }
-            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i,
-                            TEX_SZ, TEX_SZ, 1, GL_RGBA, GL_UNSIGNED_BYTE, buf);
-            stbi_image_free(raw);
-            delete[] buf;
-        } else {
-            fprintf(stderr, "WARNING: could not load sprite %s\n", spritePaths[i]);
-            // Upload a fallback colored square
-            unsigned char* buf = new unsigned char[TEX_SZ * TEX_SZ * 4];
-            memset(buf, (i + 1) * 30, TEX_SZ * TEX_SZ * 4);
-            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i,
-                            TEX_SZ, TEX_SZ, 1, GL_RGBA, GL_UNSIGNED_BYTE, buf);
-            delete[] buf;
-        }
-    }
+    // Initialize sprite registry
+    sprite::initSpriteRegistry();
+    
+    // Load all sprites using registry
+    spriteTexArray = sprite::loadSpriteTextures();
 
     // Bind to unit 4
     glUniform1i(glGetUniformLocation(prog, "spriteTex"), 4);
@@ -506,6 +449,25 @@ void initRenderer(int w, int h) {
     glUniform1i(glGetUniformLocation(prog, "spriteTex"), 4);
 }
 
+void uploadMapTexture() {
+    /* ---- upload map grid as R8UI texture (unit 0) ---- */
+    if (map::mapWidth > 0 && map::mapHeight > 0) {
+        uint8_t* md = new uint8_t[map::mapWidth * map::mapHeight];
+        for (int y = 0; y < map::mapHeight; y++)
+            for (int x = 0; x < map::mapWidth; x++)
+                md[y * map::mapWidth + x] = (uint8_t)map::worldMap[y][x];
+
+        glGenTextures(1, &mapTexGL);
+        glBindTexture(GL_TEXTURE_2D, mapTexGL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, map::mapWidth, map::mapHeight, 0,
+                     GL_RED_INTEGER, GL_UNSIGNED_BYTE, md);
+        delete[] md;
+        printf("Uploaded map texture: %dx%d\n", map::mapWidth, map::mapHeight);
+    }
+}
+
 void renderFrame() {
     glClear(GL_COLOR_BUFFER_BIT);
     glUseProgram(prog);
@@ -522,22 +484,28 @@ void renderFrame() {
     // Pass player height for parallax jumping effect
     glUniform1f(uPlayerHeight, player::player.posZ);
 
-    // Combine map sprites and projectiles
+    // Combine map sprites, projectiles, and enemies
     int totalSprites = 0;
     struct SpriteData {
         float x, y;
         int type;
-    } allSprites[MAX_SPRITES + MAX_PROJECTILES];
+    } allSprites[MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES];
 
     // Map props
-    for (int i = 0; i < map::numSprites && totalSprites < MAX_SPRITES + MAX_PROJECTILES; i++) {
+    for (int i = 0; i < map::numSprites && totalSprites < MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES; i++) {
         allSprites[totalSprites++] = { map::mapSprites[i].x, map::mapSprites[i].y, map::mapSprites[i].textureId };
     }
 
     // Active projectiles
-    for (int i = 0; i < projectile::numProjectiles && totalSprites < MAX_SPRITES + MAX_PROJECTILES; i++) {
+    for (int i = 0; i < projectile::numProjectiles && totalSprites < MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES; i++) {
         if (!projectile::projectiles[i].active) continue;
         allSprites[totalSprites++] = { projectile::projectiles[i].x, projectile::projectiles[i].y, projectile::projectiles[i].spriteType };
+    }
+
+    // Living and dead enemies (show dead bodies)
+    for (int i = 0; i < enemy::numEnemies && totalSprites < MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES; i++) {
+        if (enemy::enemies[i].state == enemy::State::Dead && enemy::enemies[i].deathTimer >= 2.0f) continue;
+        allSprites[totalSprites++] = { enemy::enemies[i].x, enemy::enemies[i].y, enemy::enemies[i].currentSprite };
     }
 
     // Sort farthest first
@@ -545,7 +513,7 @@ void renderFrame() {
         float dist;
         int   idx;
     };
-    SortedSprite sorted[MAX_SPRITES + MAX_PROJECTILES];
+    SortedSprite sorted[MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES];
     for (int i = 0; i < totalSprites; i++) {
         float dx = allSprites[i].x - player::player.posX;
         float dy = allSprites[i].y - player::player.posY;
@@ -560,8 +528,8 @@ void renderFrame() {
     }
 
     // Upload sorted positions, types
-    float spritePosData[(MAX_SPRITES + MAX_PROJECTILES) * 2];
-    int   spriteTypeData[MAX_SPRITES + MAX_PROJECTILES];
+    float spritePosData[(MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES) * 2];
+    int   spriteTypeData[MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES];
     for (int i = 0; i < totalSprites; i++) {
         int idx = sorted[i].idx;
         spritePosData[i*2+0] = allSprites[idx].x;
