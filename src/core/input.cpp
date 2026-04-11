@@ -9,9 +9,34 @@ bool lightingEnabled = true;
 static bool lKeyWasPressed = false;
 static bool mKeyWasPressed = false;
 
+// --- ADD THESE TWO ---
+static double lastMouseX = 0.0;
+static bool   mousePrimed = false;          // skip the first frame's garbage delta
+// ----------------------
+
 void processInput(GLFWwindow* window, float deltaTime) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
+
+    // --- ADD THIS BLOCK ---
+    {
+        const float MOUSE_SENSITIVITY = 0.002f; // radians per pixel — tune to taste
+
+        double mouseX, mouseY;
+        glfwGetCursorPos(window, &mouseX, &mouseY);
+
+        if (!mousePrimed) {
+            lastMouseX  = mouseX;   // initialise on first frame, don't rotate
+            mousePrimed = true;
+        } else {
+            double deltaX = mouseX - lastMouseX;
+            lastMouseX    = mouseX;
+
+            if (deltaX != 0.0)
+                player::rotatePlayer((float)(deltaX * MOUSE_SENSITIVITY));
+        }
+    }
+    // ----------------------
 
     float forward = 0.0f;
     float strafe = 0.0f;
