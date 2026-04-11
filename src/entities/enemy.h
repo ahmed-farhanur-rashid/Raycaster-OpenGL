@@ -25,6 +25,8 @@ namespace enemy {
         float alertTimer;     // countdown before switching to Chase
         float attackCooldown; // time until next attack
         float patrolTimer;    // time until next patrol direction change
+        float shootCooldown;  // time until next shot (for ranged enemies)
+        bool  isRanged;       // true = shoots projectiles, false = melee chaser
 
         // Sprite rendering fields (used by map_renderer)
         std::string baseSpriteName;     // "enemy"

@@ -12,7 +12,7 @@ int numProjectiles = 0;
 
 static const float PROJECTILE_SPEED = 15.0f;  // world units per second (much faster)
 
-void spawnProjectile(float x, float y, float dirX, float dirY) {
+void spawnProjectile(float x, float y, float z, float dirX, float dirY, bool fromPlayer) {
     // Find inactive slot or create new
     int slot = -1;
     for (int i = 0; i < numProjectiles; i++) {
@@ -31,11 +31,13 @@ void spawnProjectile(float x, float y, float dirX, float dirY) {
     Projectile& p = projectiles[slot];
     p.x = x;
     p.y = y;
+    p.z = z;
     p.dirX = dirX;
     p.dirY = dirY;
-    p.speed = PROJECTILE_SPEED;
+    p.speed = fromPlayer ? 15.0f : 8.0f;  // Player bullets faster than enemy bullets
     p.active = true;
-    p.spriteType = sprite::getSpriteIndex("bullet");
+    p.spriteType = fromPlayer ? sprite::getSpriteIndex("bullet") : sprite::getSpriteIndex("bullet");
+    p.fromPlayer = fromPlayer;
 }
 
 void updateProjectiles(float deltaTime) {

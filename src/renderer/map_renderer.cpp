@@ -79,6 +79,7 @@ uniform sampler2D     floorTex;
 uniform sampler2D     skyTex;
 uniform sampler2DArray spriteTex;
 uniform vec2  spritePos[64];
+uniform float spriteZ[64];   // vertical offset for jumping
 uniform int   spriteType[64];
 uniform int   numSprites;
 
@@ -282,6 +283,7 @@ void main() {
             // Sprite vertical position with parallax effect
             // Sprites shift based on distance - closer sprites move more
             float sprVertOffset = (playerHeight / transY) * halfH;
+            
             float drawStartY = -sprH * 0.5 + horizon + sprVertOffset;
             float drawEndY   = sprH * 0.5 + horizon + sprVertOffset;
             if (py < drawStartY || py >= drawEndY) continue;

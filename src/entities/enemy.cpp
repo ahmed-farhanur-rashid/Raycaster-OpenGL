@@ -2,8 +2,10 @@
 #include "../player/player.h"
 #include "../map/map.h"
 #include "../renderer/sprite_registry.h"
+#include "../entities/projectile.h"
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 
 namespace enemy {
 
@@ -56,6 +58,8 @@ void spawnEnemy(float x, float y, const std::string& baseSpriteName) {
     e.alertTimer  = 0.0f;
     e.attackCooldown = 0.0f;
     e.patrolTimer    = 2.0f;
+    e.shootCooldown  = 2.0f + (rand() % 100) / 50.0f;  // Random initial cooldown
+    e.isRanged       = (rand() % 2 == 0);  // 50% chance to be ranged
     
     // Set sprite names
     e.baseSpriteName     = baseSpriteName;
@@ -140,7 +144,46 @@ void updateEnemies(float deltaTime) {
                     e.currentSprite = sprite::getSpriteIndex(e.baseSpriteName);  // Back to normal sprite
                 } else {
                     float len = distToPlayer > 0.001f ? distToPlayer : 1.0f;
-                    moveEnemy(e, (dx/len) * CHASE_SPEED, (dy/len) * CHASE_SPEED, deltaTime);
+                    
+                    // Ranged enemies try to dodge player bullets
+                    if (e.isRanged) {
+                        // Check for incoming player projectiles
+                        float dodgeX = 0.0f, dodgeY = 0.0f;
+                        for (int p = 0; p < projectile::numProjectiles; p++) {
+                            if (!projectile::projectiles[p].active || !projectile::projectiles[p].fromPlayer) continue;
+                            
+                            float pdx = projectile::projectiles[p].x - e.x;
+                            float pdy = projectile::projectiles[p].y - e.y;
+                            float pdist = sqrtf(pdx*pdx + pdy*pdy);
+                            
+                            if (pdist < 3.0f) {  // Bullet is close
+                                // Dodge perpendicular to bullet direction
+                                dodgeX = -projectile::projectiles[p].dirY * 2.0f;
+                                dodgeY = projectile::projectiles[p].dirX * 2.0f;
+                                break;
+                            }
+                        }
+                        
+                        // Move towards player with dodge offset
+                        float moveX = (dx/len) * CHASE_SPEED + dodgeX;
+                        float moveY = (dy/len) * CHASE_SPEED + dodgeY;
+                        moveEnemy(e, moveX, moveY, deltaTime);
+                        
+                        // Shoot at player
+                        e.shootCooldown -= deltaTime;
+                        if (e.shootCooldown <= 0.0f && canSee) {
+                            projectile::spawnProjectile(
+                                e.x, e.y, 0.0f,
+                                dx/len, dy/len,
+                                false  // fromPlayer = false
+                            );
+                            e.shootCooldown = 2.0f + (rand() % 100) / 50.0f;  // 2-4 seconds
+                        }
+                    } else {
+                        // Melee enemy - just chase
+                        moveEnemy(e, (dx/len) * CHASE_SPEED, (dy/len) * CHASE_SPEED, deltaTime);
+                    }
+                    
                     e.dirX = dx/len; e.dirY = dy/len;
                 }
                 break;

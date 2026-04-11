@@ -77,8 +77,10 @@ void processInput(GLFWwindow* window, float deltaTime) {
         projectile::spawnProjectile(
             player::player.posX,
             player::player.posY,
+            player::player.posZ,  // Pass player height for bullet jumping
             player::player.dirX,
-            player::player.dirY
+            player::player.dirY,
+            true  // fromPlayer
         );
         fireCooldown = FIRE_RATE;
     }
