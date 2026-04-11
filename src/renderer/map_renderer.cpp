@@ -32,12 +32,14 @@ static unsigned int mapTexGL;       /* R8UI  – map grid                  */
 static unsigned int wallTexArray;   /* RGBA8 – 2-D array (wall layers)   */
 static unsigned int floorTexGL;     /* RGBA8 – floor                     */
 static unsigned int skyTexGL;       /* RGBA8 – sky panorama              */
+static unsigned int spriteTexArray; // RGBA8 2D array — one layer per sprite type
 
 /* cached uniform locations */
 static int uPlayerPos, uPlayerDir, uPlayerPlane;
 static int uScreenSize, uMapSize;
 static int uLightingEnabled, uMinimapEnabled;
 static int uPitchOffset;   // <-- ADD
+static int uSpritePos, uSpriteType, uNumSprites;
 
 /* ================================================================== */
 /*                           GLSL shaders                             */
@@ -72,6 +74,10 @@ uniform usampler2D    mapTex;
 uniform sampler2DArray wallTex;
 uniform sampler2D     floorTex;
 uniform sampler2D     skyTex;
+uniform sampler2DArray spriteTex;
+uniform vec2  spritePos[64];
+uniform int   spriteType[64];
+uniform int   numSprites;
 
 #define PI        3.14159265359
 #define MAX_STEPS 256
@@ -232,6 +238,42 @@ void main() {
                 color *= shade;
             }
         }
+
+        // ---- SPRITE PASS ----
+        for (int i = 0; i < numSprites; i++) {
+            vec2 sp = spritePos[i];
+
+            // Transform sprite into camera space
+            vec2  d       = sp - playerPos;
+            float invDet  = 1.0 / (playerPlane.x * playerDir.y - playerDir.x * playerPlane.y);
+            float transX  = invDet * (playerDir.y * d.x - playerDir.x * d.y);
+            float transY  = invDet * (-playerPlane.y * d.x + playerPlane.x * d.y);
+
+            if (transY <= 0.0) continue;            // behind camera
+            if (transY >= perpDist) continue;       // behind a wall
+
+            // Screen X of sprite centre
+            float sprScreenX = (0.5 + transX / transY * 0.5) * screenSize.x;
+
+            // Sprite height & width on screen
+            float sprH = abs(screenSize.y / transY);
+            float sprW = sprH;  // square sprites
+
+            float drawStartX = sprScreenX - sprW * 0.5;
+            float drawEndX   = sprScreenX + sprW * 0.5;
+            if (px < drawStartX || px >= drawEndX) continue;
+
+            float drawStartY = halfH - sprH * 0.5;
+            float drawEndY   = halfH + sprH * 0.5;
+            if (py < drawStartY || py >= drawEndY) continue;
+
+            // UV
+            float u = (px - drawStartX) / sprW;
+            float v = (py - drawStartY) / sprH;
+            vec4 sc = texture(spriteTex, vec3(u, v, float(spriteType[i])));
+
+            if (sc.a > 0.5) color = sc.rgb;  // alpha clip
+        }
     }
 
     fragColor = vec4(color, 1.0);
@@ -302,6 +344,9 @@ void initRenderer(int w, int h) {
     uLightingEnabled = glGetUniformLocation(prog, "lightingEnabled");
     uMinimapEnabled  = glGetUniformLocation(prog, "minimapEnabled");
     uPitchOffset     = glGetUniformLocation(prog, "pitchOffset");  // <-- ADD
+    uSpritePos  = glGetUniformLocation(prog, "spritePos");
+    uSpriteType = glGetUniformLocation(prog, "spriteType");
+    uNumSprites = glGetUniformLocation(prog, "numSprites");
 
     /* ---- upload map grid as R8UI texture (unit 0) ---- */
     {
@@ -364,6 +409,57 @@ void initRenderer(int w, int h) {
                             &skyTexGL, SKY_W, SKY_H, GL_REPEAT, GL_CLAMP_TO_EDGE))
         makeFallbackTex(&skyTexGL, 10, 12, 25);
 
+    // Sprite texture array (unit 4)
+    glGenTextures(1, &spriteTexArray);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, spriteTexArray);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8,
+                 TEX_SZ, TEX_SZ, 8,   // 8 sprite types max
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    // Load sprite PNGs into layers
+    const char* spritePaths[] = {
+        "resource/textures/sprite_barrel.png",
+        "resource/textures/sprite_lamp.png",
+        "resource/textures/sprite_column.png",
+        "resource/textures/sprite_torch.png",
+        "resource/textures/sprite_enemy.png",
+        "resource/textures/sprite_health.png",
+        "resource/textures/sprite_ammo.png",
+        "resource/textures/sprite_key.png",
+    };
+    int nSprites = sizeof(spritePaths) / sizeof(spritePaths[0]);
+    for (int i = 0; i < nSprites; i++) {
+        int sw, sh, sc;
+        unsigned char* raw = stbi_load(spritePaths[i], &sw, &sh, &sc, 4);
+        if (raw) {
+            unsigned char* buf = new unsigned char[TEX_SZ * TEX_SZ * 4];
+            for (int y = 0; y < TEX_SZ; y++)
+                for (int x = 0; x < TEX_SZ; x++) {
+                    int sx2 = x * sw / TEX_SZ, sy2 = y * sh / TEX_SZ;
+                    memcpy(&buf[(y*TEX_SZ+x)*4], &raw[(sy2*sw+sx2)*4], 4);
+                }
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i,
+                            TEX_SZ, TEX_SZ, 1, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+            stbi_image_free(raw);
+            delete[] buf;
+        } else {
+            fprintf(stderr, "WARNING: could not load sprite %s\n", spritePaths[i]);
+            // Upload a fallback colored square
+            unsigned char* buf = new unsigned char[TEX_SZ * TEX_SZ * 4];
+            memset(buf, (i + 1) * 30, TEX_SZ * TEX_SZ * 4);
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i,
+                            TEX_SZ, TEX_SZ, 1, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+            delete[] buf;
+        }
+    }
+
+    // Bind to unit 4
+    glUniform1i(glGetUniformLocation(prog, "spriteTex"), 4);
+
     /* ---- full-screen quad VAO/VBO ---- */
     float quad[] = {
         -1, -1,  0, 1,
@@ -389,6 +485,7 @@ void initRenderer(int w, int h) {
     glUniform1i(glGetUniformLocation(prog, "wallTex"),  1);
     glUniform1i(glGetUniformLocation(prog, "floorTex"), 2);
     glUniform1i(glGetUniformLocation(prog, "skyTex"),   3);
+    glUniform1i(glGetUniformLocation(prog, "spriteTex"), 4);
 }
 
 void renderFrame() {
@@ -409,11 +506,44 @@ void renderFrame() {
     float pitchOffset = player::player.posZ * (float)scrH * 0.25f;
     glUniform1f(uPitchOffset, pitchOffset);   // <-- ADD
 
+    // Sort sprites farthest first
+    struct SortedSprite {
+        float dist;
+        int   idx;
+    };
+    SortedSprite sorted[MAX_SPRITES];
+    for (int i = 0; i < map::numSprites; i++) {
+        float dx = map::mapSprites[i].x - player::player.posX;
+        float dy = map::mapSprites[i].y - player::player.posY;
+        sorted[i] = { dx*dx + dy*dy, i };
+    }
+    // Simple insertion sort (numSprites is small)
+    for (int i = 1; i < map::numSprites; i++) {
+        SortedSprite key = sorted[i];
+        int j = i - 1;
+        while (j >= 0 && sorted[j].dist < key.dist) { sorted[j+1] = sorted[j]; j--; }
+        sorted[j+1] = key;
+    }
+
+    // Upload sorted positions, types
+    float spritePosData[MAX_SPRITES * 2];
+    int   spriteTypeData[MAX_SPRITES];
+    for (int i = 0; i < map::numSprites; i++) {
+        int idx = sorted[i].idx;
+        spritePosData[i*2+0] = map::mapSprites[idx].x;
+        spritePosData[i*2+1] = map::mapSprites[idx].y;
+        spriteTypeData[i]    = map::mapSprites[idx].textureId;
+    }
+    glUniform2fv(uSpritePos,  map::numSprites, spritePosData);
+    glUniform1iv(uSpriteType, map::numSprites, spriteTypeData);
+    glUniform1i (uNumSprites, map::numSprites);
+
     /* bind textures to their units */
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,       mapTexGL);
     glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D_ARRAY, wallTexArray);
     glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D,       floorTexGL);
     glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D,       skyTexGL);
+    glActiveTexture(GL_TEXTURE4); glBindTexture(GL_TEXTURE_2D_ARRAY, spriteTexArray);
 
     /* draw */
     glBindVertexArray(vao);
@@ -425,6 +555,7 @@ void cleanupRenderer() {
     glDeleteTextures(1, &wallTexArray);
     glDeleteTextures(1, &floorTexGL);
     glDeleteTextures(1, &skyTexGL);
+    glDeleteTextures(1, &spriteTexArray);
     glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);
     glDeleteProgram(prog);
