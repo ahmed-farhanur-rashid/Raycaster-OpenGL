@@ -37,6 +37,7 @@ static unsigned int skyTexGL;       /* RGBA8 – sky panorama              */
 static int uPlayerPos, uPlayerDir, uPlayerPlane;
 static int uScreenSize, uMapSize;
 static int uLightingEnabled, uMinimapEnabled;
+static int uPitchOffset;   // <-- ADD
 
 /* ================================================================== */
 /*                           GLSL shaders                             */
@@ -65,6 +66,7 @@ uniform vec2  screenSize;
 uniform ivec2 mapSize;
 uniform bool  lightingEnabled;
 uniform bool  minimapEnabled;
+uniform float pitchOffset;      // <-- ADD
 
 uniform usampler2D    mapTex;
 uniform sampler2DArray wallTex;
@@ -118,6 +120,7 @@ void main() {
     int   ix = int(px);
     int   iy = int(py);
     int   halfH = int(screenSize.y) / 2;
+    int   horizon = halfH + int(pitchOffset);
 
     /* minimap bounds */
     const int mmSz = 160, mmOx = 10, mmOy = 10;
@@ -179,8 +182,8 @@ void main() {
         bool  hit      = wallType > 0;
 
         int lineH     = (perpDist < 1e20) ? int(screenSize.y / perpDist) : 0;
-        int drawStart = -lineH / 2 + halfH;
-        int drawEnd   =  lineH / 2 + halfH;
+        int drawStart = -lineH / 2 + horizon;
+        int drawEnd   =  lineH / 2 + horizon;
 
         if (iy < drawStart || !hit) {
             /* ---- SKY ---- */
@@ -191,7 +194,7 @@ void main() {
 
         } else if (iy > drawEnd) {
             /* ---- FLOOR ---- */
-            int p = iy - halfH;
+            int p = iy - horizon;
             if (p < 1) p = 1;
             float rowDist = (0.5 * screenSize.y) / float(p);
             vec2  f = playerPos + rowDist * rd;
@@ -298,6 +301,7 @@ void initRenderer(int w, int h) {
     uMapSize         = glGetUniformLocation(prog, "mapSize");
     uLightingEnabled = glGetUniformLocation(prog, "lightingEnabled");
     uMinimapEnabled  = glGetUniformLocation(prog, "minimapEnabled");
+    uPitchOffset     = glGetUniformLocation(prog, "pitchOffset");  // <-- ADD
 
     /* ---- upload map grid as R8UI texture (unit 0) ---- */
     {
@@ -399,6 +403,11 @@ void renderFrame() {
     glUniform2i(uMapSize,     map::mapWidth,           map::mapHeight);
     glUniform1i(uLightingEnabled, input::lightingEnabled ? 1 : 0);
     glUniform1i(uMinimapEnabled,  input::minimapEnabled  ? 1 : 0);
+
+    // posZ (world units) → pixel offset for horizon shift
+    // Scale factor: tune this if the jump feels too subtle or too extreme
+    float pitchOffset = player::player.posZ * (float)scrH * 0.25f;
+    glUniform1f(uPitchOffset, pitchOffset);   // <-- ADD
 
     /* bind textures to their units */
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,       mapTexGL);

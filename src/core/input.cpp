@@ -18,6 +18,13 @@ void processInput(GLFWwindow* window, float deltaTime) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
+    // ---- ADD: run physics every frame ----
+    player::updatePhysics(deltaTime);
+
+    // ---- ADD: space bar to jump ----
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
+        player::jump();
+
     // --- ADD THIS BLOCK ---
     {
         const float MOUSE_SENSITIVITY = 0.002f; // radians per pixel — tune to taste
