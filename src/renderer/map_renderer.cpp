@@ -1,9 +1,6 @@
 /*
  * map_renderer.cpp — GPU-accelerated raycasting renderer
- *
- * The entire DDA raycasting, wall/floor/sky rendering, distance fog,
- * and minimap overlay run in a single fragment shader.  The CPU only
- * uploads map data and textures at init, then sets per-frame uniforms.
+ * Heart of raycaster.
  */
 
 #include <glad/glad.h>
