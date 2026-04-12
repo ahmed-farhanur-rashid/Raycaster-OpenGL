@@ -8,6 +8,9 @@
 #include "../map/map.h"
 #include "../player/player.h"
 #include "../core/input.h"
+#include "../entities/projectile.h"
+#include "../entities/enemy.h"
+#include "sprite_registry.h"
 #include "shader.h"
 #include <cstdint>
 #include <cstdio>
@@ -29,11 +32,14 @@ static unsigned int mapTexGL;       /* R8UI  – map grid                  */
 static unsigned int wallTexArray;   /* RGBA8 – 2-D array (wall layers)   */
 static unsigned int floorTexGL;     /* RGBA8 – floor                     */
 static unsigned int skyTexGL;       /* RGBA8 – sky panorama              */
+static unsigned int spriteTexArray; // RGBA8 2D array — one layer per sprite type
 
 /* cached uniform locations */
 static int uPlayerPos, uPlayerDir, uPlayerPlane;
 static int uScreenSize, uMapSize;
 static int uLightingEnabled, uMinimapEnabled;
+static int uPlayerHeight;
+static int uSpritePos, uSpriteType, uNumSprites;
 
 /* ================================================================== */
 /*                           GLSL shaders                             */
@@ -62,11 +68,17 @@ uniform vec2  screenSize;
 uniform ivec2 mapSize;
 uniform bool  lightingEnabled;
 uniform bool  minimapEnabled;
+uniform float playerHeight;   // Player's Z position (jumping)
 
 uniform usampler2D    mapTex;
 uniform sampler2DArray wallTex;
 uniform sampler2D     floorTex;
 uniform sampler2D     skyTex;
+uniform sampler2DArray spriteTex;
+uniform vec2  spritePos[64];
+uniform float spriteZ[64];   // vertical offset for jumping
+uniform int   spriteType[64];
+uniform int   numSprites;
 
 #define PI        3.14159265359
 #define MAX_STEPS 256
@@ -115,6 +127,7 @@ void main() {
     int   ix = int(px);
     int   iy = int(py);
     int   halfH = int(screenSize.y) / 2;
+    int   horizon = halfH;  // Horizon at screen center (no pitch offset)
 
     /* minimap bounds */
     const int mmSz = 160, mmOx = 10, mmOy = 10;
@@ -176,8 +189,12 @@ void main() {
         bool  hit      = wallType > 0;
 
         int lineH     = (perpDist < 1e20) ? int(screenSize.y / perpDist) : 0;
-        int drawStart = -lineH / 2 + halfH;
-        int drawEnd   =  lineH / 2 + halfH;
+        
+        // Vertical offset for jumping - creates parallax effect
+        // Objects closer move more than distant objects
+        float vertOffset = (playerHeight / perpDist) * halfH;
+        int drawStart = -lineH / 2 + horizon + int(vertOffset);
+        int drawEnd   =  lineH / 2 + horizon + int(vertOffset);
 
         if (iy < drawStart || !hit) {
             /* ---- SKY ---- */
@@ -188,9 +205,18 @@ void main() {
 
         } else if (iy > drawEnd) {
             /* ---- FLOOR ---- */
-            int p = iy - halfH;
+            // For floor, we need to calculate the distance this pixel represents
+            // The relationship is: iy = horizon + (screenHeight/2) / rowDist + vertOffset
+            // where vertOffset = (playerHeight / rowDist) * halfH
+            // So: iy - horizon = (halfH / rowDist) + (playerHeight * halfH / rowDist)
+            //     iy - horizon = halfH * (1 + playerHeight) / rowDist
+            // Therefore: rowDist = halfH * (1 + playerHeight) / (iy - horizon)
+            
+            int p = iy - horizon;
             if (p < 1) p = 1;
-            float rowDist = (0.5 * screenSize.y) / float(p);
+            
+            // Calculate row distance with height compensation
+            float rowDist = (halfH * (1.0 + playerHeight)) / float(p);
             vec2  f = playerPos + rowDist * rd;
             color = texture(floorTex, fract(f)).rgb;
 
@@ -225,6 +251,46 @@ void main() {
                 float shade = 1.0 / (1.0 + perpDist * perpDist * 0.04);
                 color *= shade;
             }
+        }
+
+        // ---- SPRITE PASS ----
+        for (int i = 0; i < numSprites; i++) {
+            vec2 sp = spritePos[i];
+
+            // Transform sprite into camera space
+            vec2  d       = sp - playerPos;
+            float invDet  = 1.0 / (playerPlane.x * playerDir.y - playerDir.x * playerPlane.y);
+            float transX  = invDet * (playerDir.y * d.x - playerDir.x * d.y);
+            float transY  = invDet * (-playerPlane.y * d.x + playerPlane.x * d.y);
+
+            if (transY <= 0.0) continue;            // behind camera
+            if (transY >= perpDist) continue;       // behind a wall
+
+            // Screen X of sprite centre
+            float sprScreenX = (0.5 + transX / transY * 0.5) * screenSize.x;
+
+            // Sprite height & width on screen
+            float sprH = abs(screenSize.y / transY);
+            float sprW = sprH;  // square sprites
+
+            float drawStartX = sprScreenX - sprW * 0.5;
+            float drawEndX   = sprScreenX + sprW * 0.5;
+            if (px < drawStartX || px >= drawEndX) continue;
+
+            // Sprite vertical position with parallax effect
+            // Sprites shift based on distance - closer sprites move more
+            float sprVertOffset = (playerHeight / transY) * halfH;
+            
+            float drawStartY = -sprH * 0.5 + horizon + sprVertOffset;
+            float drawEndY   = sprH * 0.5 + horizon + sprVertOffset;
+            if (py < drawStartY || py >= drawEndY) continue;
+
+            // UV
+            float u = (px - drawStartX) / sprW;
+            float v = (py - drawStartY) / sprH;
+            vec4 sc = texture(spriteTex, vec3(u, v, float(spriteType[i])));
+
+            if (sc.a > 0.5) color = sc.rgb;  // alpha clip
         }
     }
 
@@ -295,22 +361,10 @@ void initRenderer(int w, int h) {
     uMapSize         = glGetUniformLocation(prog, "mapSize");
     uLightingEnabled = glGetUniformLocation(prog, "lightingEnabled");
     uMinimapEnabled  = glGetUniformLocation(prog, "minimapEnabled");
-
-    /* ---- upload map grid as R8UI texture (unit 0) ---- */
-    {
-        uint8_t* md = new uint8_t[map::mapWidth * map::mapHeight];
-        for (int y = 0; y < map::mapHeight; y++)
-            for (int x = 0; x < map::mapWidth; x++)
-                md[y * map::mapWidth + x] = (uint8_t)map::worldMap[y][x];
-
-        glGenTextures(1, &mapTexGL);
-        glBindTexture(GL_TEXTURE_2D, mapTexGL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, map::mapWidth, map::mapHeight, 0,
-                     GL_RED_INTEGER, GL_UNSIGNED_BYTE, md);
-        delete[] md;
-    }
+    uPlayerHeight    = glGetUniformLocation(prog, "playerHeight");
+    uSpritePos  = glGetUniformLocation(prog, "spritePos");
+    uSpriteType = glGetUniformLocation(prog, "spriteType");
+    uNumSprites = glGetUniformLocation(prog, "numSprites");
 
     /* ---- wall textures → 2-D array texture (unit 1) ---- */
     {
@@ -357,6 +411,15 @@ void initRenderer(int w, int h) {
                             &skyTexGL, SKY_W, SKY_H, GL_REPEAT, GL_CLAMP_TO_EDGE))
         makeFallbackTex(&skyTexGL, 10, 12, 25);
 
+    // Initialize sprite registry
+    sprite::initSpriteRegistry();
+    
+    // Load all sprites using registry
+    spriteTexArray = sprite::loadSpriteTextures();
+
+    // Bind to unit 4
+    glUniform1i(glGetUniformLocation(prog, "spriteTex"), 4);
+
     /* ---- full-screen quad VAO/VBO ---- */
     float quad[] = {
         -1, -1,  0, 1,
@@ -382,6 +445,26 @@ void initRenderer(int w, int h) {
     glUniform1i(glGetUniformLocation(prog, "wallTex"),  1);
     glUniform1i(glGetUniformLocation(prog, "floorTex"), 2);
     glUniform1i(glGetUniformLocation(prog, "skyTex"),   3);
+    glUniform1i(glGetUniformLocation(prog, "spriteTex"), 4);
+}
+
+void uploadMapTexture() {
+    /* ---- upload map grid as R8UI texture (unit 0) ---- */
+    if (map::mapWidth > 0 && map::mapHeight > 0) {
+        uint8_t* md = new uint8_t[map::mapWidth * map::mapHeight];
+        for (int y = 0; y < map::mapHeight; y++)
+            for (int x = 0; x < map::mapWidth; x++)
+                md[y * map::mapWidth + x] = (uint8_t)map::worldMap[y][x];
+
+        glGenTextures(1, &mapTexGL);
+        glBindTexture(GL_TEXTURE_2D, mapTexGL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, map::mapWidth, map::mapHeight, 0,
+                     GL_RED_INTEGER, GL_UNSIGNED_BYTE, md);
+        delete[] md;
+        printf("Uploaded map texture: %dx%d\n", map::mapWidth, map::mapHeight);
+    }
 }
 
 void renderFrame() {
@@ -397,11 +480,74 @@ void renderFrame() {
     glUniform1i(uLightingEnabled, input::lightingEnabled ? 1 : 0);
     glUniform1i(uMinimapEnabled,  input::minimapEnabled  ? 1 : 0);
 
+    // Pass player height for parallax jumping effect
+    glUniform1f(uPlayerHeight, player::player.posZ);
+
+    // Combine map sprites, projectiles, and enemies
+    int totalSprites = 0;
+    struct SpriteData {
+        float x, y;
+        int type;
+    } allSprites[MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES];
+
+    // Map props
+    for (int i = 0; i < map::numSprites && totalSprites < MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES; i++) {
+        allSprites[totalSprites++] = { map::mapSprites[i].x, map::mapSprites[i].y, map::mapSprites[i].textureId };
+    }
+
+    // Active projectiles
+    for (int i = 0; i < projectile::numProjectiles && totalSprites < MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES; i++) {
+        if (!projectile::projectiles[i].active) continue;
+        allSprites[totalSprites++] = { projectile::projectiles[i].x, projectile::projectiles[i].y, projectile::projectiles[i].spriteType };
+        if (!projectile::projectiles[i].fromPlayer) {
+            printf("Rendering enemy bullet at (%.1f, %.1f)\n", projectile::projectiles[i].x, projectile::projectiles[i].y);
+        }
+    }
+
+    // Living and dead enemies (show dead bodies)
+    for (int i = 0; i < enemy::numEnemies && totalSprites < MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES; i++) {
+        if (enemy::enemies[i].state == enemy::State::Dead && enemy::enemies[i].deathTimer >= 2.0f) continue;
+        allSprites[totalSprites++] = { enemy::enemies[i].x, enemy::enemies[i].y, enemy::enemies[i].currentSprite };
+    }
+
+    // Sort farthest first
+    struct SortedSprite {
+        float dist;
+        int   idx;
+    };
+    SortedSprite sorted[MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES];
+    for (int i = 0; i < totalSprites; i++) {
+        float dx = allSprites[i].x - player::player.posX;
+        float dy = allSprites[i].y - player::player.posY;
+        sorted[i] = { dx*dx + dy*dy, i };
+    }
+    // Insertion sort
+    for (int i = 1; i < totalSprites; i++) {
+        SortedSprite key = sorted[i];
+        int j = i - 1;
+        while (j >= 0 && sorted[j].dist < key.dist) { sorted[j+1] = sorted[j]; j--; }
+        sorted[j+1] = key;
+    }
+
+    // Upload sorted positions, types
+    float spritePosData[(MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES) * 2];
+    int   spriteTypeData[MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES];
+    for (int i = 0; i < totalSprites; i++) {
+        int idx = sorted[i].idx;
+        spritePosData[i*2+0] = allSprites[idx].x;
+        spritePosData[i*2+1] = allSprites[idx].y;
+        spriteTypeData[i]    = allSprites[idx].type;
+    }
+    glUniform2fv(uSpritePos,  totalSprites, spritePosData);
+    glUniform1iv(uSpriteType, totalSprites, spriteTypeData);
+    glUniform1i (uNumSprites, totalSprites);
+
     /* bind textures to their units */
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,       mapTexGL);
     glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D_ARRAY, wallTexArray);
     glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D,       floorTexGL);
     glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D,       skyTexGL);
+    glActiveTexture(GL_TEXTURE4); glBindTexture(GL_TEXTURE_2D_ARRAY, spriteTexArray);
 
     /* draw */
     glBindVertexArray(vao);
@@ -413,6 +559,7 @@ void cleanupRenderer() {
     glDeleteTextures(1, &wallTexArray);
     glDeleteTextures(1, &floorTexGL);
     glDeleteTextures(1, &skyTexGL);
+    glDeleteTextures(1, &spriteTexArray);
     glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);
     glDeleteProgram(prog);

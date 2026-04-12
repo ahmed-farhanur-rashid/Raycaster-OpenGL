@@ -15,6 +15,8 @@ void initPlayer() {
     player.planeY = 0.66f;
     player.moveSpeed = 3.0f;
     player.rotSpeed = 2.5f;
+    player.posZ = 0.0f;   // <-- ADD
+    player.velZ = 0.0f;   // <-- ADD
 }
 
 void movePlayer(float forward, float strafe, float deltaTime) {
@@ -52,6 +54,25 @@ void rotatePlayer(float angle) {
     float oldPlaneX = player.planeX;
     player.planeX = player.planeX * c - player.planeY * s;
     player.planeY = oldPlaneX * s + player.planeY * c;
+}
+
+void updatePhysics(float deltaTime) {
+    // Apply gravity
+    player.velZ -= GRAVITY * deltaTime;
+
+    // Integrate vertical position
+    player.posZ += player.velZ * deltaTime;
+
+    // Ground collision — clamp to floor
+    if (player.posZ <= 0.0f) {
+        player.posZ = 0.0f;
+        player.velZ = 0.0f;
+    }
+}
+
+void jump() {
+    if (player.posZ == 0.0f)        // only jump when grounded
+        player.velZ = JUMP_SPEED;
 }
 
 } // namespace player

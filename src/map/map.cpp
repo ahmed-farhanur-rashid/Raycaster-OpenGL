@@ -1,4 +1,6 @@
 #include "map.h"
+#include "../entities/enemy.h"
+#include "../renderer/sprite_registry.h"
 #include <fstream>
 #include <string>
 #include <cstdio>
@@ -19,6 +21,8 @@ bool loadMap(const char* path) {
         return false;
     }
 
+    numSprites = 0;  // Reset before loading
+
     int row = 0;
     std::string line;
     while (std::getline(f, line) && row < MAX_MAP_DIMENSION) {
@@ -30,6 +34,53 @@ bool loadMap(const char* path) {
             char c = line[x];
             if (c >= '0' && c <= '9')
                 worldMap[row][x] = c - '0';
+            else if (c == 'B') {  // Barrel
+                if (numSprites < MAX_SPRITES) {
+                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 0, 0 };
+                }
+                worldMap[row][x] = 0;
+            }
+            else if (c == 'L') {  // Lamp
+                if (numSprites < MAX_SPRITES) {
+                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 1, 1 };
+                }
+                worldMap[row][x] = 0;
+            }
+            else if (c == 'C') {  // Column
+                if (numSprites < MAX_SPRITES) {
+                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 2, 2 };
+                }
+                worldMap[row][x] = 0;
+            }
+            else if (c == 'T') {  // Torch
+                if (numSprites < MAX_SPRITES) {
+                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 3, 3 };
+                }
+                worldMap[row][x] = 0;
+            }
+            else if (c == 'E') {  // Enemy
+                // Spawn enemy entity with named sprite
+                enemy::spawnEnemy((float)x + 0.5f, (float)row + 0.5f, "enemy");
+                worldMap[row][x] = 0;
+            }
+            else if (c == 'H') {  // Health
+                if (numSprites < MAX_SPRITES) {
+                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 5, 5 };
+                }
+                worldMap[row][x] = 0;
+            }
+            else if (c == 'A') {  // Ammo
+                if (numSprites < MAX_SPRITES) {
+                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 6, 6 };
+                }
+                worldMap[row][x] = 0;
+            }
+            else if (c == 'K') {  // Key
+                if (numSprites < MAX_SPRITES) {
+                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 7, 7 };
+                }
+                worldMap[row][x] = 0;
+            }
             else
                 worldMap[row][x] = 0;
         }
@@ -38,8 +89,7 @@ bool loadMap(const char* path) {
     mapHeight = row;
 
     printf("Loaded map: %dx%d from %s\n", mapWidth, mapHeight, path);
-
-    numSprites = 0;
+    printf("Loaded %d sprites\n", numSprites);
 
     return true;
 }
