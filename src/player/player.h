@@ -16,6 +16,11 @@ namespace player {
 
         float posZ;   // <-- ADD: vertical position (0.0 = ground)
         float velZ;   // <-- ADD: vertical velocity (world units/sec)
+
+        int health;     // <-- ADD (0–100)
+        int maxHealth;  // <-- ADD
+        int ammo;       // <-- ADD
+        int maxAmmo;    // <-- ADD
     };
 
     extern PlayerState player;
@@ -25,6 +30,9 @@ namespace player {
     void rotatePlayer(float angle);
     void updatePhysics(float deltaTime);  // <-- ADD
     void jump();                          // <-- ADD
+    void takeDamage(int amount);          // <-- ADD: damage player
+    bool isDead();                        // <-- ADD: check if player is dead
+    void checkPickups(float deltaTime);   // <-- ADD: check for sprite pickups
 }
 
 #endif

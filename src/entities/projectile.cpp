@@ -96,6 +96,7 @@ void updateProjectiles(float deltaTime) {
                 
                 if (dist < 0.3f) {  // Player hit radius
                     printf("Enemy bullet hit player!\n");
+                    player::takeDamage(15);  // 15 damage from enemy bullets
                     hud::triggerDamageFlash();  // Flash screen red
                     p.active = false;
                     hitSomething = true;

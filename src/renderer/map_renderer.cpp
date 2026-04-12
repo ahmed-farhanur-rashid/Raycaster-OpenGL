@@ -552,9 +552,10 @@ void renderFrame() {
     glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D,       skyTexGL);
     glActiveTexture(GL_TEXTURE4); glBindTexture(GL_TEXTURE_2D_ARRAY, spriteTexArray);
 
-    /* draw */
+    /* draw - explicitly bind VAO to prevent state pollution */
     glBindVertexArray(vao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);  // <-- ADD: unbind after drawing
 }
 
 void cleanupRenderer() {

@@ -1,6 +1,7 @@
 #include "player.h"
 #include "../map/map.h"
 #include <cmath>
+#include <cstdio>
 
 namespace player {
 
@@ -17,6 +18,10 @@ void initPlayer() {
     player.rotSpeed = 2.5f;
     player.posZ = 0.0f;   // <-- ADD
     player.velZ = 0.0f;   // <-- ADD
+    player.health    = 100;
+    player.maxHealth = 100;
+    player.ammo      = 30;
+    player.maxAmmo   = 30;
 }
 
 void movePlayer(float forward, float strafe, float deltaTime) {
@@ -73,6 +78,45 @@ void updatePhysics(float deltaTime) {
 void jump() {
     if (player.posZ == 0.0f)        // only jump when grounded
         player.velZ = JUMP_SPEED;
+}
+
+void takeDamage(int amount) {
+    player.health -= amount;
+    if (player.health < 0) player.health = 0;
+}
+
+bool isDead() {
+    return player.health <= 0;
+}
+
+void checkPickups(float deltaTime) {
+    // Check collision with map sprites (pickups)
+    for (int i = 0; i < map::numSprites; i++) {
+        if (map::mapSprites[i].type == -1) continue;  // Already picked up
+        
+        float dx = map::mapSprites[i].x - player.posX;
+        float dy = map::mapSprites[i].y - player.posY;
+        float dist = sqrtf(dx*dx + dy*dy);
+        
+        if (dist < 0.5f) {  // Pickup radius
+            // Type 5 = health, Type 6 = ammo
+            if (map::mapSprites[i].type == 5) {  // Health pickup
+                if (player.health < player.maxHealth) {
+                    player.health += 25;
+                    if (player.health > player.maxHealth) player.health = player.maxHealth;
+                    printf("Picked up health! Health: %d\n", player.health);
+                    map::mapSprites[i].type = -1;  // Mark as collected
+                }
+            } else if (map::mapSprites[i].type == 6) {  // Ammo pickup
+                if (player.ammo < player.maxAmmo) {
+                    player.ammo += 15;
+                    if (player.ammo > player.maxAmmo) player.ammo = player.maxAmmo;
+                    printf("Picked up ammo! Ammo: %d\n", player.ammo);
+                    map::mapSprites[i].type = -1;  // Mark as collected
+                }
+            }
+        }
+    }
 }
 
 } // namespace player

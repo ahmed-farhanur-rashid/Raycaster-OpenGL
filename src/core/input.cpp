@@ -73,7 +73,7 @@ void processInput(GLFWwindow* window, float deltaTime) {
     bool fireNow = glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS ||
                    glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     
-    if (fireNow && fireCooldown <= 0.0f) {
+    if (fireNow && fireCooldown <= 0.0f && player::player.ammo > 0) {
         projectile::spawnProjectile(
             player::player.posX,
             player::player.posY,
@@ -82,6 +82,7 @@ void processInput(GLFWwindow* window, float deltaTime) {
             player::player.dirY,
             true  // fromPlayer
         );
+        player::player.ammo--;  // Decrease ammo
         fireCooldown = FIRE_RATE;
     }
     

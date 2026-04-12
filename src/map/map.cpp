@@ -36,25 +36,29 @@ bool loadMap(const char* path) {
                 worldMap[row][x] = c - '0';
             else if (c == 'B') {  // Barrel
                 if (numSprites < MAX_SPRITES) {
-                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 0, 0 };
+                    int texId = sprite::getSpriteIndex("barrel");
+                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 0, texId };
                 }
                 worldMap[row][x] = 0;
             }
             else if (c == 'L') {  // Lamp
                 if (numSprites < MAX_SPRITES) {
-                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 1, 1 };
+                    int texId = sprite::getSpriteIndex("lamp");
+                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 1, texId };
                 }
                 worldMap[row][x] = 0;
             }
             else if (c == 'C') {  // Column
                 if (numSprites < MAX_SPRITES) {
-                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 2, 2 };
+                    int texId = sprite::getSpriteIndex("column");
+                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 2, texId };
                 }
                 worldMap[row][x] = 0;
             }
             else if (c == 'T') {  // Torch
                 if (numSprites < MAX_SPRITES) {
-                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 3, 3 };
+                    int texId = sprite::getSpriteIndex("torch");
+                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 3, texId };
                 }
                 worldMap[row][x] = 0;
             }
@@ -65,19 +69,22 @@ bool loadMap(const char* path) {
             }
             else if (c == 'H') {  // Health
                 if (numSprites < MAX_SPRITES) {
-                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 5, 5 };
+                    int texId = sprite::getSpriteIndex("health");
+                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 5, texId };
                 }
                 worldMap[row][x] = 0;
             }
             else if (c == 'A') {  // Ammo
                 if (numSprites < MAX_SPRITES) {
-                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 6, 6 };
+                    int texId = sprite::getSpriteIndex("ammo");
+                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 6, texId };
                 }
                 worldMap[row][x] = 0;
             }
             else if (c == 'K') {  // Key
                 if (numSprites < MAX_SPRITES) {
-                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 7, 7 };
+                    int texId = sprite::getSpriteIndex("key");
+                    map::mapSprites[numSprites++] = { (float)x + 0.5f, (float)row + 0.5f, 7, texId };
                 }
                 worldMap[row][x] = 0;
             }

@@ -194,8 +194,8 @@ void updateEnemies(float deltaTime) {
                     e.state = State::Chase;
                 } else if (e.attackCooldown <= 0.0f) {
                     // Deal damage to player
-                    // player::takeDamage(10);   // implement this in player.cpp
                     printf("Enemy %d attacks player!\n", i);
+                    player::takeDamage(10);  // 10 damage per attack
                     e.attackCooldown = ATTACK_CD;
                 }
                 break;

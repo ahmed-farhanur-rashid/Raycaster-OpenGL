@@ -44,6 +44,7 @@ int main() {
     printf("==========================\n");
 
     double lastTime = glfwGetTime();
+    bool gameOver = false;
 
     while (!glfwWindowShouldClose(window)) {
         double now = glfwGetTime();
@@ -51,12 +52,41 @@ int main() {
         lastTime = now;
         if (deltaTime > 0.05f) deltaTime = 0.05f;
 
-        input::processInput(window, deltaTime);
-        projectile::updateProjectiles(deltaTime);
-        enemy::updateEnemies(deltaTime);
+        if (!gameOver) {
+            input::processInput(window, deltaTime);
+            projectile::updateProjectiles(deltaTime);
+            enemy::updateEnemies(deltaTime);
+            player::checkPickups(deltaTime);  // <-- ADD: check for pickups
+            
+            // Check if player died
+            if (player::isDead()) {
+                gameOver = true;
+                printf("GAME OVER! Press ENTER to restart.\n");
+            }
+        } else {
+            // Game over screen - wait for ENTER to restart
+            if (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS) {
+                // Reset player
+                player::initPlayer();
+                // Reload map to respawn enemies and pickups
+                map::loadMap("resource/maps/map.txt");
+                renderer::uploadMapTexture();
+                gameOver = false;
+                printf("Game restarted!\n");
+                
+                // Force a render frame to clear any OpenGL state issues
+                glClear(GL_COLOR_BUFFER_BIT);
+                glfwSwapBuffers(window);
+            }
+        }
 
         renderer::renderFrame();
-        hud::renderWeapon();
+        if (!gameOver) {
+            hud::renderWeapon();
+            hud::renderHUD();
+        } else {
+            hud::renderGameOver();
+        }
 
         glfwSwapBuffers(window);
         glfwPollEvents();

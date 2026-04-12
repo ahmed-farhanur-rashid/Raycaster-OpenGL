@@ -7,6 +7,8 @@ namespace hud {
     void updateRecoil(bool isFiring, float deltaTime);
     void triggerDamageFlash();
     void renderWeapon();          // call after renderer::renderFrame()
+    void renderHUD();             // <-- ADD: health bar, ammo, crosshair
+    void renderGameOver();        // <-- ADD: game over screen
     void cleanupHUD();
 }
 
