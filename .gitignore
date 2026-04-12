@@ -26,5 +26,4 @@ mingw64/*
 
 # Ignore some markdown files
 
-build/
-.idea/
+CG_Lab_Project_Guideline latest.docx.md

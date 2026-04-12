@@ -21,12 +21,12 @@ unsigned int compileShader(unsigned int type, const char* src) {
 }
 
 unsigned int createShaderProgram(const char* vertSrc, const char* fragSrc) {
-    unsigned int vertexShader = compileShader(GL_VERTEX_SHADER, vertSrc);
-    unsigned int fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragSrc);
+    unsigned int vs = compileShader(GL_VERTEX_SHADER, vertSrc);
+    unsigned int fs = compileShader(GL_FRAGMENT_SHADER, fragSrc);
 
     unsigned int program = glCreateProgram();
-    glAttachShader(program, vertexShader);
-    glAttachShader(program, fragmentShader);
+    glAttachShader(program, vs);
+    glAttachShader(program, fs);
     glLinkProgram(program);
 
     int success;
@@ -38,8 +38,8 @@ unsigned int createShaderProgram(const char* vertSrc, const char* fragSrc) {
         exit(EXIT_FAILURE);
     }
 
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
     return program;
 }
 

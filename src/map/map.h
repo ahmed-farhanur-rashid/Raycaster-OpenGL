@@ -12,7 +12,6 @@ namespace map {
     struct MapSprite {
         float x, y;
         int type;
-        int textureId;  // <-- ADD: index into sprite texture array
     };
 
     extern MapSprite mapSprites[MAX_SPRITES];
