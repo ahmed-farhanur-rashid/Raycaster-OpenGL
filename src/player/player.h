@@ -5,7 +5,7 @@ namespace player {
 
     // Physics constants — tune these freely
     constexpr float GRAVITY    = 14.0f;
-    constexpr float JUMP_SPEED = 3.0f;
+    constexpr float JUMP_SPEED = 5.0f;
 
     struct PlayerState {
         float posX, posY;

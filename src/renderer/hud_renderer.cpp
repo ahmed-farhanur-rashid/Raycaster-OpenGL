@@ -72,6 +72,7 @@ static unsigned int enTexFireOver    = 0;
 static const int    EN_OVERHEAT_FRAME_COUNT = 5;
 static unsigned int enTexOverheat[5] = {};
 static int          enOverheatFrame  = 0;
+static const float  EN_OVERHEAT_FRAME_DURATION = 0.25f;  /* slower overheat anim */
 
 /* energy weapon ammo (0.0 = empty, 1.0 = full) */
 static float enNormalCharge    = 1.0f;
@@ -169,6 +170,39 @@ void initHUD(int screenW, int screenH) {
     glUniform1i(glGetUniformLocation(prog, "weaponTex"), 0);
     uUseSolidColor = glGetUniformLocation(prog, "useSolidColor");
     uSolidColor    = glGetUniformLocation(prog, "solidColor");
+
+    /* ---- preload ALL weapon textures so equip never hitches ---- */
+    texIdle       = loadTex("resource/textures/weapons/assault/idle/assault_idle.png");
+    texFireBullet = loadTex("resource/textures/weapons/assault/fire/assault_fire_bullet_left_click.png");
+    texFireGrenade= loadTex("resource/textures/weapons/assault/fire/assault_fire_grenade_right_click.png");
+    { char buf[128];
+      for (int i = 0; i < RELOAD_FRAME_COUNT; i++) {
+          snprintf(buf, sizeof(buf),
+                   "resource/textures/weapons/assault/reload/assault_reload_%02d.png", i + 1);
+          texReload[i] = loadTex(buf);
+      }
+    }
+    hgTexIdle = loadTex("resource/textures/weapons/handgun/idle/hand_gun_idle.png");
+    hgTexFire = loadTex("resource/textures/weapons/handgun/fire/handgun_fire.png");
+    sgTexIdle = loadTex("resource/textures/weapons/shotgun/idle/shotgun_idle.png");
+    sgTexFire = loadTex("resource/textures/weapons/shotgun/fire/shotgun_fire.png");
+    { char buf[128];
+      for (int i = 0; i < SG_RELOAD_FRAME_COUNT; i++) {
+          snprintf(buf, sizeof(buf),
+                   "resource/textures/weapons/shotgun/reload/shotgun_reload_%02d.png", i + 1);
+          sgTexReload[i] = loadTex(buf);
+      }
+    }
+    enTexIdle       = loadTex("resource/textures/weapons/energy/idle/energy_idle.png");
+    enTexFireNormal = loadTex("resource/textures/weapons/energy/fire/energy_fire_normal.png");
+    enTexFireOver   = loadTex("resource/textures/weapons/energy/fire/energy_fire_overcharge.png");
+    { char buf[128];
+      for (int i = 0; i < EN_OVERHEAT_FRAME_COUNT; i++) {
+          snprintf(buf, sizeof(buf),
+                   "resource/textures/weapons/energy/overheat/energy_overheat_%02d.png", i + 1);
+          enTexOverheat[i] = loadTex(buf);
+      }
+    }
 }
 
 void equipAssaultRifle() {
@@ -180,20 +214,6 @@ void equipAssaultRifle() {
     autoFireTimer = 0.0f;
     prevLmbHeld = false;
 
-    /* load assault rifle textures (only once) */
-    if (!texIdle) {
-        texIdle       = loadTex("resource/textures/weapons/assault/idle/assault_idle.png");
-        texFireBullet = loadTex("resource/textures/weapons/assault/fire/assault_fire_bullet_left_click.png");
-        texFireGrenade= loadTex("resource/textures/weapons/assault/fire/assault_fire_grenade_right_click.png");
-
-        char buf[128];
-        for (int i = 0; i < RELOAD_FRAME_COUNT; i++) {
-            snprintf(buf, sizeof(buf),
-                     "resource/textures/weapons/assault/reload/assault_reload_%02d.png",
-                     i + 1);
-            texReload[i] = loadTex(buf);
-        }
-    }
     printf("Assault Rifle equipped.\n");
 }
 
@@ -213,10 +233,6 @@ void equipHandgun() {
     animTimer = 0.0f;
     prevLmbHeld = false;
 
-    if (!hgTexIdle) {
-        hgTexIdle = loadTex("resource/textures/weapons/handgun/idle/hand_gun_idle.png");
-        hgTexFire = loadTex("resource/textures/weapons/handgun/fire/handgun_fire.png");
-    }
     printf("Handgun equipped.\n");
 }
 
@@ -228,17 +244,6 @@ void equipShotgun() {
     animTimer = 0.0f;
     prevLmbHeld = false;
 
-    if (!sgTexIdle) {
-        sgTexIdle = loadTex("resource/textures/weapons/shotgun/idle/shotgun_idle.png");
-        sgTexFire = loadTex("resource/textures/weapons/shotgun/fire/shotgun_fire.png");
-        char buf[128];
-        for (int i = 0; i < SG_RELOAD_FRAME_COUNT; i++) {
-            snprintf(buf, sizeof(buf),
-                     "resource/textures/weapons/shotgun/reload/shotgun_reload_%02d.png",
-                     i + 1);
-            sgTexReload[i] = loadTex(buf);
-        }
-    }
     printf("Shotgun equipped.\n");
 }
 
@@ -253,18 +258,6 @@ void equipEnergyWeapon() {
     enNormalDepleted = false;
     enOverDepleted   = false;
 
-    if (!enTexIdle) {
-        enTexIdle       = loadTex("resource/textures/weapons/energy/idle/energy_idle.png");
-        enTexFireNormal = loadTex("resource/textures/weapons/energy/fire/energy_fire_normal.png");
-        enTexFireOver   = loadTex("resource/textures/weapons/energy/fire/energy_fire_overcharge.png");
-        char buf[128];
-        for (int i = 0; i < EN_OVERHEAT_FRAME_COUNT; i++) {
-            snprintf(buf, sizeof(buf),
-                     "resource/textures/weapons/energy/overheat/energy_overheat_%02d.png",
-                     i + 1);
-            enTexOverheat[i] = loadTex(buf);
-        }
-    }
     printf("Energy Weapon equipped.\n");
 }
 
@@ -450,8 +443,8 @@ void updateHUD(bool isMoving, float deltaTime, bool lmbHeld, bool rmbHeld) {
                 }
             }
         } else if (curWeapon == WeaponType::ENERGY_WEAPON) {
-            if (animTimer >= RELOAD_FRAME_DURATION) {
-                animTimer -= RELOAD_FRAME_DURATION;
+            if (animTimer >= EN_OVERHEAT_FRAME_DURATION) {
+                animTimer -= EN_OVERHEAT_FRAME_DURATION;
                 enOverheatFrame++;
                 if (enOverheatFrame >= EN_OVERHEAT_FRAME_COUNT) {
                     enOverheatFrame = 0;
