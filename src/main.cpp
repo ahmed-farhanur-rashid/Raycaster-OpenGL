@@ -8,11 +8,15 @@
 #include "player/player.h"
 #include "renderer/map_renderer.h"
 #include "renderer/hud_renderer.h"
-
-const int SCREEN_W = 800;
-const int SCREEN_H = 600;
+#include "settings/settings.h"
 
 int main() {
+    /* load settings before anything else (no GL needed) */
+    settings::load("resource/config.json", "resource/keybind.json");
+
+    const int SCREEN_W = settings::getInt("screen_width",  800);
+    const int SCREEN_H = settings::getInt("screen_height", 600);
+
     window::initGLFW();
     GLFWwindow* window = window::createWindow(SCREEN_W, SCREEN_H, "Raycaster");
     window::initGLAD();

@@ -1,21 +1,27 @@
 #include "player.h"
 #include "../map/map.h"
+#include "../settings/settings.h"
 #include <cmath>
 
 namespace player {
 
 PlayerState player;
+float GRAVITY    = 14.0f;
+float JUMP_SPEED = 5.0f;
 
 void initPlayer() {
+    GRAVITY    = settings::getFloat("gravity",    14.0f);
+    JUMP_SPEED = settings::getFloat("jump_speed", 5.0f);
+
     player.posX = 1.5f;
     player.posY = 1.5f;
     player.dirX = 1.0f;
     player.dirY = 0.0f;
     player.planeX = 0.0f;
     player.planeY = 0.66f;
-    player.moveSpeed = 3.0f;
-    player.sprintSpeed = 4.5f;
-    player.rotSpeed = 2.5f;
+    player.moveSpeed  = settings::getFloat("move_speed",     3.0f);
+    player.sprintSpeed = settings::getFloat("sprint_speed",  4.5f);
+    player.rotSpeed   = settings::getFloat("rotation_speed", 2.5f);
     player.posZ = 0.0f;
     player.velZ = 0.0f;
 }

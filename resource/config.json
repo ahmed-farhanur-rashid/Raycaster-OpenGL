@@ -1,0 +1,29 @@
+{
+    "screen_width": 800,
+    "screen_height": 600,
+
+    "gravity": 14.0,
+    "jump_speed": 5.0,
+    "move_speed": 3.0,
+    "sprint_speed": 4.5,
+    "rotation_speed": 2.5,
+    "mouse_sensitivity": 0.002,
+
+    "ar_max_bullets": 30,
+    "ar_max_grenades": 5,
+    "ar_fire_duration": 0.12,
+    "ar_grenade_duration": 0.25,
+    "ar_reload_duration": 0.10,
+    "ar_auto_fire_interval": 0.07,
+
+    "sg_fire_duration": 0.15,
+    "sg_reload_duration": 0.10,
+
+    "en_drain_normal": 6.0,
+    "en_drain_overcharge": 3.0,
+    "en_recharge_rate": 0.15,
+    "en_overheat_duration": 0.25,
+    "en_fire_duration": 0.12,
+
+    "hg_fire_duration": 0.15
+}

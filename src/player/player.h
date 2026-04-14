@@ -3,9 +3,9 @@
 
 namespace player {
 
-    // Physics constants — tune these freely
-    constexpr float GRAVITY    = 14.0f;
-    constexpr float JUMP_SPEED = 5.0f;
+    // Physics constants — loaded from config.json, these are defaults
+    extern float GRAVITY;
+    extern float JUMP_SPEED;
 
     struct PlayerState {
         float posX, posY;

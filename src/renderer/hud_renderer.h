@@ -1,10 +1,9 @@
 #ifndef HUD_RENDERER_H
 #define HUD_RENDERER_H
 
-namespace hud {
+#include "../weapons/weapon.h"
 
-    enum class WeaponType  { NONE, ASSAULT_RIFLE, SHOTGUN, ENERGY_WEAPON, HANDGUN };
-    enum class WeaponState { IDLE, FIRE_BULLET, FIRE_GRENADE, RELOAD };
+namespace hud {
 
     void initHUD(int screenW, int screenH);
     void updateHUD(bool isMoving, float deltaTime, bool lmbHeld, bool rmbHeld);
