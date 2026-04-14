@@ -7,6 +7,7 @@
 #include "map/map.h"
 #include "player/player.h"
 #include "renderer/map_renderer.h"
+#include "renderer/hud_renderer.h"
 
 const int SCREEN_W = 800;
 const int SCREEN_H = 600;
@@ -25,6 +26,7 @@ int main() {
 
     player::initPlayer();
     renderer::initRenderer(SCREEN_W, SCREEN_H);
+    hud::initHUD(SCREEN_W, SCREEN_H);
     input::initMouse(window);
 
     printf("=== Raycaster Controls ===\n");
@@ -36,6 +38,13 @@ int main() {
     printf("Space            - Jump\n");
     printf("M                - Toggle minimap\n");
     printf("L                - Toggle lighting\n");
+    printf("1                - Equip Assault Rifle\n");
+    printf("2                - Equip Shotgun\n");
+    printf("3                - Equip Energy Weapon\n");
+    printf("4                - Equip Handgun\n");
+    printf("LMB              - Fire / Normal fire\n");
+    printf("RMB              - Grenade / Overcharge\n");
+    printf("R                - Reload\n");
     printf("ESC              - Quit\n");
     printf("==========================\n");
 
@@ -50,11 +59,13 @@ int main() {
         input::processInput(window, deltaTime);
 
         renderer::renderFrame();
+        hud::renderWeapon();
 
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
+    hud::cleanupHUD();
     renderer::cleanupRenderer();
     glfwTerminate();
     return 0;

@@ -1,5 +1,6 @@
 #include "input.h"
 #include "../player/player.h"
+#include "../renderer/hud_renderer.h"
 
 namespace input {
 
@@ -8,6 +9,12 @@ bool lightingEnabled = true;
 
 static bool lKeyWasPressed = false;
 static bool mKeyWasPressed = false;
+static bool rKeyWasPressed = false;
+static bool key1WasPressed = false;
+static bool key2WasPressed = false;
+static bool key3WasPressed = false;
+static bool key4WasPressed = false;
+static bool rmbWasPressed  = false;
 static double lastMouseX = 0.0;
 static bool   mousePrimed = false;          // skip the first frame's garbage delta
 
@@ -75,6 +82,40 @@ void processInput(GLFWwindow* window, float deltaTime) {
     bool lNow = glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS;
     if (lNow && !lKeyWasPressed) lightingEnabled = !lightingEnabled;
     lKeyWasPressed = lNow;
+
+    /* weapon controls */
+    bool key1Now = glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS;
+    if (key1Now && !key1WasPressed) hud::equipAssaultRifle();
+    key1WasPressed = key1Now;
+
+    bool key2Now = glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS;
+    if (key2Now && !key2WasPressed) hud::equipShotgun();
+    key2WasPressed = key2Now;
+
+    bool key3Now = glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS;
+    if (key3Now && !key3WasPressed) hud::equipEnergyWeapon();
+    key3WasPressed = key3Now;
+
+    bool key4Now = glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS;
+    if (key4Now && !key4WasPressed) hud::equipHandgun();
+    key4WasPressed = key4Now;
+
+    bool lmbNow = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    bool rmbNow = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+
+    /* for non-energy weapons, RMB fires grenade on press */
+    if (hud::currentWeapon() != hud::WeaponType::ENERGY_WEAPON) {
+        if (rmbNow && !rmbWasPressed) hud::fireGrenade();
+    }
+    rmbWasPressed = rmbNow;
+
+    bool rNow = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS;
+    if (rNow && !rKeyWasPressed) hud::reload();
+    rKeyWasPressed = rNow;
+
+    /* update HUD bob + animation */
+    bool isMoving = (forward != 0.0f || strafe != 0.0f);
+    hud::updateHUD(isMoving, deltaTime, lmbNow, rmbNow);
 }
 
 } // namespace input

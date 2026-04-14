@@ -2,12 +2,28 @@
 #define HUD_RENDERER_H
 
 namespace hud {
+
+    enum class WeaponType  { NONE, ASSAULT_RIFLE, SHOTGUN, ENERGY_WEAPON, HANDGUN };
+    enum class WeaponState { IDLE, FIRE_BULLET, FIRE_GRENADE, RELOAD };
+
     void initHUD(int screenW, int screenH);
-    void updateBob(bool isMoving, float deltaTime);
-    void updateRecoil(bool isFiring, float deltaTime);
-    void triggerDamageFlash();
-    void renderWeapon();          // call after renderer::renderFrame()
+    void updateHUD(bool isMoving, float deltaTime, bool lmbHeld, bool rmbHeld);
+    void fireBullet();
+    void fireGrenade();
+    void reload();
+    bool hasWeaponEquipped();
+    WeaponType currentWeapon();
+    void equipAssaultRifle();       // press 1
+    void equipShotgun();            // press 2
+    void equipEnergyWeapon();       // press 3
+    void equipHandgun();            // press 4
+    void renderWeapon();            // call after renderer::renderFrame()
     void cleanupHUD();
+
+    int getBullets();
+    int getMaxBullets();
+    int getGrenades();
+    int getMaxGrenades();
 }
 
 #endif
