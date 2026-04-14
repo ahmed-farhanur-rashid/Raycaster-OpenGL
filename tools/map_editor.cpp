@@ -1,7 +1,7 @@
 /*
  * tools/map_editor.cpp — Visual map editor for the raycaster
  *
- * Usage:  ./build/map_editor [size]
+ * Usage:  build/map_editor.exe [size]
  *         size = side length (map will be size × size), default 32, max 256
  *
  * Controls:
@@ -9,8 +9,6 @@
  *   Right-click / drag   — erase wall (always)
  *   E                    — toggle DRAW / ERASE mode
  *   1-9                  — select wall type
- *   B,L,C,T,E,H,A,K      — place sprites (Barrel, Lamp, Column, Torch, Enemy, Health, Ammo, Key)
- *   S                    — toggle SPRITE placement mode
  *   G                    — toggle grid overlay
  *   C                    — clear interior (keep perimeter)
  *   Ctrl+S               — save to resource/maps/map.txt
@@ -42,8 +40,6 @@ static int grid[MAX_DIM][MAX_DIM];
 static int  brushType  = 1;         /* wall type 1-9                     */
 static bool showGrid   = true;      /* grid overlay toggle               */
 static bool eraserMode = false;     /* E key toggles DRAW / ERASE        */
-static bool spriteMode = false;     /* S key toggles WALL / SPRITE mode  */
-static char spriteChar = 'B';       /* current sprite character          */
 static bool painting   = false;     /* left mouse dragging               */
 static bool erasing    = false;     /* right mouse dragging              */
 static int  lastCellX  = -1, lastCellY = -1; /* for drag de-dup */
@@ -93,11 +89,6 @@ static void initMap() {
     pushUndo();
 }
 
-static bool isValidSprite(char c) {
-    return c == 'B' || c == 'L' || c == 'C' || c == 'T' || 
-           c == 'E' || c == 'H' || c == 'A' || c == 'K';
-}
-
 static void clearInterior() {
     pushUndo();
     for (int y = 1; y < mapSz - 1; y++)
@@ -109,15 +100,8 @@ static bool saveMap(const char* path) {
     std::ofstream f(path);
     if (!f) { fprintf(stderr, "ERROR: cannot write %s\n", path); return false; }
     for (int y = 0; y < mapSz; y++) {
-        for (int x = 0; x < mapSz; x++) {
-            int v = grid[y][x];
-            if (v >= 0 && v <= 9)
-                f << (char)('0' + v);
-            else if (v > 0 && v < 128)
-                f << (char)v;  // Write sprite characters directly
-            else
-                f << '0';
-        }
+        for (int x = 0; x < mapSz; x++)
+            f << (char)('0' + grid[y][x]);
         f << '\n';
     }
     printf("Saved map (%dx%d) to %s\n", mapSz, mapSz, path);
@@ -132,12 +116,7 @@ static bool loadExistingMap(const char* path) {
     while (std::getline(f, line) && row < mapSz) {
         for (int x = 0; x < mapSz && x < (int)line.size(); x++) {
             char c = line[x];
-            if (c >= '0' && c <= '9')
-                grid[row][x] = c - '0';
-            else if (isValidSprite(c))
-                grid[row][x] = c;  // Store sprite character directly
-            else
-                grid[row][x] = 0;
+            grid[row][x] = (c >= '0' && c <= '9') ? c - '0' : 0;
         }
         row++;
     }
@@ -232,11 +211,6 @@ static void wallColor(int type, float& r, float& g, float& b) {
     }
 }
 
-static char spriteToChar(int v) {
-    if (v >= 'A' && v <= 'Z') return (char)v;
-    return 0;
-}
-
 static void render() {
     glClearColor(0.12f, 0.12f, 0.14f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -247,27 +221,10 @@ static void render() {
     for (int y = 0; y < mapSz; y++)
         for (int x = 0; x < mapSz; x++) {
             int v = grid[y][x];
-            if (v > 0 && v <= 9) {
+            if (v > 0) {
                 float r, g, b;
                 wallColor(v, r, g, b);
                 drawRect(x * cellPx, y * cellPx, cellPx, cellPx, r, g, b);
-            } else if (v > 9) {
-                /* Sprite - draw as colored circle */
-                char c = spriteToChar(v);
-                float r=0.8f, g=0.8f, b=0.2f;  // Default yellow
-                if (c == 'B') { r=0.6f; g=0.4f; b=0.2f; }  // Barrel - brown
-                else if (c == 'L') { r=1.0f; g=0.9f; b=0.3f; }  // Lamp - bright yellow
-                else if (c == 'C') { r=0.7f; g=0.7f; b=0.7f; }  // Column - gray
-                else if (c == 'T') { r=1.0f; g=0.4f; b=0.0f; }  // Torch - orange
-                else if (c == 'E') { r=0.9f; g=0.2f; b=0.2f; }  // Enemy - red
-                else if (c == 'H') { r=0.2f; g=0.9f; b=0.2f; }  // Health - green
-                else if (c == 'A') { r=0.9f; g=0.9f; b=0.2f; }  // Ammo - yellow
-                else if (c == 'K') { r=0.9f; g=0.7f; b=0.0f; }  // Key - gold
-                
-                /* Draw circle approximation with small square */
-                float margin = cellPx * 0.2f;
-                drawRect(x * cellPx + margin, y * cellPx + margin, 
-                        cellPx - 2*margin, cellPx - 2*margin, r, g, b);
             }
         }
 
@@ -282,16 +239,8 @@ static void render() {
     }
 
     /* brush indicator (HUD) */
-    float hx = WINDOW_SIZE - 60.0f, hy = 8.0f;
-    if (spriteMode) {
-        /* Blue border to indicate sprite mode */
-        drawRect(hx, hy, 50.0f, 30.0f, 0.2f, 0.4f, 0.9f);
-        drawRect(hx + 2, hy + 2, 46.0f, 26.0f, 0.12f, 0.12f, 0.14f);
-        /* Show sprite character */
-        char label[32];
-        snprintf(label, sizeof(label), "Sprite: %c", spriteChar);
-        printf("%s\r", label);  // Update in console
-    } else if (eraserMode) {
+    float hx = WINDOW_SIZE - 40.0f, hy = 8.0f;
+    if (eraserMode) {
         /* red border to indicate eraser mode */
         drawRect(hx, hy, 30.0f, 30.0f, 0.8f, 0.15f, 0.15f);
         drawRect(hx + 3, hy + 3, 24.0f, 24.0f, 0.12f, 0.12f, 0.14f);
@@ -342,14 +291,7 @@ static void mouseButtonCB(GLFWwindow* w, int button, int action, int mods) {
         if (action == GLFW_PRESS) {
             painting = true;
             pushUndo();
-            int value;
-            if (eraserMode) {
-                value = 0;
-            } else if (spriteMode) {
-                value = (int)spriteChar;  // Store sprite character as int
-            } else {
-                value = brushType;
-            }
+            int value = eraserMode ? 0 : brushType;
             if (!isPerimeter(cx, cy)) grid[cy][cx] = value;
             lastCellX = cx; lastCellY = cy;
         } else {
@@ -377,15 +319,7 @@ static void cursorPosCB(GLFWwindow* w, double mx, double my) {
     cellFromMouse(w, cx, cy);
     if (cx == lastCellX && cy == lastCellY) return;
 
-    int value;
-    if (erasing) {
-        value = 0;
-    } else if (spriteMode) {
-        value = (int)spriteChar;
-    } else {
-        value = eraserMode ? 0 : brushType;
-    }
-    
+    int value = painting ? (eraserMode ? 0 : brushType) : 0;
     if (lastCellX >= 0)
         paintLine(lastCellX, lastCellY, cx, cy, value);
     else if (!isPerimeter(cx, cy))
@@ -407,42 +341,21 @@ static void keyCB(GLFWwindow* w, int key, int scancode, int action, int mods) {
 
     bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
 
-    /* Sprite selection keys (work in any mode) */
-    if (!ctrl) {
-        switch (key) {
-            case GLFW_KEY_B: spriteChar = 'B'; printf("Sprite selected: Barrel (B)\n"); break;
-            case GLFW_KEY_L: spriteChar = 'L'; printf("Sprite selected: Lamp (L)\n"); break;
-            case GLFW_KEY_C: spriteChar = 'C'; printf("Sprite selected: Column (C)\n"); break;
-            case GLFW_KEY_T: spriteChar = 'T'; printf("Sprite selected: Torch (T)\n"); break;
-            case GLFW_KEY_E: spriteChar = 'E'; printf("Sprite selected: Enemy (E)\n"); break;
-            case GLFW_KEY_H: spriteChar = 'H'; printf("Sprite selected: Health (H)\n"); break;
-            case GLFW_KEY_A: spriteChar = 'A'; printf("Sprite selected: Ammo (A)\n"); break;
-            case GLFW_KEY_K: spriteChar = 'K'; printf("Sprite selected: Key (K)\n"); break;
-        }
-    }
-
     switch (key) {
         case GLFW_KEY_E:
-            if (!ctrl && !spriteMode) {  // Only toggle eraser in wall mode without Ctrl
-                eraserMode = !eraserMode;
-                printf("Mode: %s\n", eraserMode ? "ERASE" : "DRAW");
-            }
-            break;
-        case GLFW_KEY_S:
-            if (ctrl) {
-                saveMap("resource/maps/map.txt");
-            } else {
-                spriteMode = !spriteMode;
-                printf("Mode: %s\n", spriteMode ? "SPRITE" : "WALL");
-            }
+            eraserMode = !eraserMode;
+            printf("Mode: %s\n", eraserMode ? "ERASE" : "DRAW");
             break;
         case GLFW_KEY_G:
             showGrid = !showGrid;
             break;
         case GLFW_KEY_C:
+            clearInterior();
+            printf("Cleared interior\n");
+            break;
+        case GLFW_KEY_S:
             if (ctrl) {
-                clearInterior();
-                printf("Cleared interior\n");
+                saveMap("resource/maps/map.txt");
             }
             break;
         case GLFW_KEY_Z:
@@ -477,17 +390,15 @@ int main(int argc, char** argv) {
     printf("=== Raycaster Map Editor ===\n");
     printf("Map size: %d x %d\n", mapSz, mapSz);
     printf("Controls:\n");
-    printf("  Left-click/drag   — place wall/sprite or erase\n");
-    printf("  Right-click/drag  — erase (always)\n");
-    printf("  E                 — toggle DRAW/ERASE (wall mode only)\n");
-    printf("  S                 — toggle WALL/SPRITE mode\n");
-    printf("  1-9               — select wall type (wall mode)\n");
-    printf("  B,L,C,T,E,H,A,K   — select sprite type (any mode)\n");
-    printf("  G                 — toggle grid\n");
-    printf("  Ctrl+C            — clear interior\n");
-    printf("  Ctrl+S            — save map\n");
-    printf("  Ctrl+Z / Ctrl+Y   — undo / redo\n");
-    printf("  ESC               — quit\n");
+    printf("  Left-click/drag  — place wall (DRAW) or erase (ERASE)\n");
+    printf("  Right-click/drag — erase wall (always)\n");
+    printf("  E                — toggle DRAW / ERASE mode\n");
+    printf("  1-9              — select wall type\n");
+    printf("  G                — toggle grid\n");
+    printf("  C                — clear interior\n");
+    printf("  Ctrl+S           — save map\n");
+    printf("  Ctrl+Z / Ctrl+Y — undo / redo\n");
+    printf("  ESC              — quit\n");
     printf("============================\n");
 
     if (!glfwInit()) {
@@ -531,17 +442,8 @@ int main(int argc, char** argv) {
         render();
 
         /* update title with brush info */
-        snprintf(title, sizeof(title), "Map Editor  [%dx%d]  %s  %s",
-                 mapSz, mapSz, 
-                 spriteMode ? "SPRITE" : (eraserMode ? "ERASE" : "DRAW"),
-                 spriteMode ? "Sprite: X" : "Brush: X");
-        if (spriteMode) {
-            title[strlen(title)-1] = spriteChar;
-        } else {
-            char buf[4];
-            snprintf(buf, sizeof(buf), "%d", brushType);
-            strcat(title, buf);
-        }
+        snprintf(title, sizeof(title), "Map Editor  [%dx%d]  %s  brush: %d",
+                 mapSz, mapSz, eraserMode ? "ERASE" : "DRAW", brushType);
         glfwSetWindowTitle(window, title);
 
         glfwSwapBuffers(window);
