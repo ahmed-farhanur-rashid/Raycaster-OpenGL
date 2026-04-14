@@ -22,6 +22,8 @@ void initPlayer() {
     player.maxHealth = 100;
     player.ammo      = 30;
     player.maxAmmo   = 30;
+    player.damageFlash = 0.0f;
+    player.healFlash   = 0.0f;
 }
 
 void movePlayer(float forward, float strafe, float deltaTime) {
@@ -83,6 +85,7 @@ void jump() {
 void takeDamage(int amount) {
     player.health -= amount;
     if (player.health < 0) player.health = 0;
+    player.damageFlash = 1.0f;   // full intensity, will decay over time
 }
 
 bool isDead() {
@@ -102,10 +105,16 @@ void checkPickups(float deltaTime) {
             // Type 5 = health, Type 6 = ammo
             if (map::mapSprites[i].type == 5) {  // Health pickup
                 if (player.health < player.maxHealth) {
+                    int oldHealth = player.health;
                     player.health += 25;
                     if (player.health > player.maxHealth) player.health = player.maxHealth;
                     printf("Picked up health! Health: %d\n", player.health);
                     map::mapSprites[i].type = -1;  // Mark as collected
+                    
+                    // Trigger heal flash if health was actually restored
+                    if (player.health > oldHealth) {
+                        player.healFlash = 1.0f;
+                    }
                 }
             } else if (map::mapSprites[i].type == 6) {  // Ammo pickup
                 if (player.ammo < player.maxAmmo) {
@@ -117,6 +126,15 @@ void checkPickups(float deltaTime) {
             }
         }
     }
+}
+
+void updateEffects(float deltaTime) {
+    const float FLASH_DECAY = 2.5f;   // full flash fades in ~0.4 seconds
+    player.damageFlash -= FLASH_DECAY * deltaTime;
+    if (player.damageFlash < 0.0f) player.damageFlash = 0.0f;
+
+    player.healFlash -= FLASH_DECAY * deltaTime;
+    if (player.healFlash < 0.0f) player.healFlash = 0.0f;
 }
 
 } // namespace player

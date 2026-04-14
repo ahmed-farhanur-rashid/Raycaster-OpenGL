@@ -21,6 +21,9 @@ namespace player {
         int maxHealth;  // <-- ADD
         int ammo;       // <-- ADD
         int maxAmmo;    // <-- ADD
+
+        float damageFlash;  // <-- ADD: decays to 0 when no damage
+        float healFlash;    // <-- ADD
     };
 
     extern PlayerState player;
@@ -33,6 +36,7 @@ namespace player {
     void takeDamage(int amount);          // <-- ADD: damage player
     bool isDead();                        // <-- ADD: check if player is dead
     void checkPickups(float deltaTime);   // <-- ADD: check for sprite pickups
+    void updateEffects(float deltaTime);  // <-- ADD: decay screen effects
 }
 
 #endif

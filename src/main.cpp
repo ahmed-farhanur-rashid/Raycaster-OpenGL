@@ -31,6 +31,9 @@ int main() {
         return -1;
     }
     
+    // Load per-face textures (optional - uses defaults if file doesn't exist)
+    map::loadFaceMap("resource/maps/map_face.txt");
+    
     // Upload map texture to GPU after loading
     renderer::uploadMapTexture();
 
@@ -57,6 +60,7 @@ int main() {
             projectile::updateProjectiles(deltaTime);
             enemy::updateEnemies(deltaTime);
             player::checkPickups(deltaTime);  // <-- ADD: check for pickups
+            player::updateEffects(deltaTime); // <-- ADD: decay screen effects
             
             // Check if player died
             if (player::isDead()) {

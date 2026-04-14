@@ -4,12 +4,17 @@
 #include <fstream>
 #include <string>
 #include <cstdio>
+#include <cstdint>
+#include <cstring>
 
 namespace map {
 
 int mapWidth  = 0;
 int mapHeight = 0;
 int worldMap[MAX_MAP_DIMENSION][MAX_MAP_DIMENSION];
+
+// Face texture indices per map cell
+uint8_t faceMap[MAX_MAP_DIMENSION][MAX_MAP_DIMENSION][4];
 
 MapSprite mapSprites[MAX_SPRITES];
 int numSprites = 0;
@@ -99,6 +104,49 @@ bool loadMap(const char* path) {
     printf("Loaded %d sprites\n", numSprites);
 
     return true;
+}
+
+bool loadFaceMap(const char* path) {
+    // Default: all faces use texture 0 (matching existing wallType-1 behaviour)
+    memset(faceMap, 0, sizeof(faceMap));
+
+    // Also mirror worldMap values into faceMap as default
+    // (so existing maps work without a faceMap file)
+    for (int y = 0; y < mapHeight; y++)
+        for (int x = 0; x < mapWidth; x++) {
+            uint8_t t = (uint8_t)(worldMap[y][x] > 0 ? worldMap[y][x] - 1 : 0);
+            faceMap[y][x][FACE_N] = t;
+            faceMap[y][x][FACE_S] = t;
+            faceMap[y][x][FACE_E] = t;
+            faceMap[y][x][FACE_W] = t;
+        }
+
+    std::ifstream f(path);
+    if (!f) return true;  // not an error — defaults applied above
+
+    // Format: each line is "x y N S E W" (e.g. "3 4 0 0 1 2")
+    // Skip comment lines starting with #
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        
+        int x, y, n, s, e, w;
+        if (sscanf(line.c_str(), "%d %d %d %d %d %d", &x, &y, &n, &s, &e, &w) == 6) {
+            if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) continue;
+            faceMap[y][x][FACE_N] = (uint8_t)n;
+            faceMap[y][x][FACE_S] = (uint8_t)s;
+            faceMap[y][x][FACE_E] = (uint8_t)e;
+            faceMap[y][x][FACE_W] = (uint8_t)w;
+        }
+    }
+    
+    printf("Loaded face map from %s\n", path);
+    return true;
+}
+
+void setFaceTexture(int x, int y, int face, uint8_t texIdx) {
+    if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight && face >= 0 && face < 4)
+        faceMap[y][x][face] = texIdx;
 }
 
 } // namespace map

@@ -36,6 +36,7 @@ static unsigned int wallTexArray;   /* RGBA8 – 2-D array (wall layers)   */
 static unsigned int floorTexGL;     /* RGBA8 – floor                     */
 static unsigned int skyTexGL;       /* RGBA8 – sky panorama              */
 static unsigned int spriteTexArray; // RGBA8 2D array — one layer per sprite type
+static unsigned int faceTexGL;      /* RGBA8UI – per-face textures       */
 
 /* cached uniform locations */
 static int uPlayerPos, uPlayerDir, uPlayerPlane;
@@ -43,6 +44,8 @@ static int uScreenSize, uMapSize;
 static int uLightingEnabled, uMinimapEnabled;
 static int uPlayerHeight;
 static int uSpritePos, uSpriteType, uNumSprites;
+static int uDamageFlash, uVignette, uMotionBlur, uHealFlash, uHealthFrac;
+static int uFaceTex;
 
 /* ================================================================== */
 /*                           GLSL shaders                             */
@@ -83,6 +86,16 @@ uniform float spriteZ[64];   // vertical offset for jumping
 uniform int   spriteType[64];
 uniform int   numSprites;
 
+// Screen effects uniforms
+uniform float damageFlash;
+uniform float healFlash;
+uniform float vignette;
+uniform float motionBlur;
+uniform float playerHealthFrac;
+
+// Per-face texture sampler
+uniform usampler2D faceTex;
+
 #define PI        3.14159265359
 #define MAX_STEPS 256
 
@@ -92,8 +105,22 @@ int getMap(int x, int y) {
     return int(texelFetch(mapTex, ivec2(x, y), 0).r);
 }
 
+// Returns the texture index for a given map cell and hit direction
+int getFaceTexture(int cellX, int cellY, int side, vec2 rd) {
+    if (cellX < 0 || cellX >= mapSize.x || cellY < 0 || cellY >= mapSize.y) return 0;
+    uvec4 faces = texelFetch(faceTex, ivec2(cellX, cellY), 0);
+
+    if (side == 0) {
+        // EW wall — ray hit in X direction
+        return int(rd.x > 0.0 ? faces.b : faces.a);  // East or West
+    } else {
+        // NS wall — ray hit in Y direction
+        return int(rd.y > 0.0 ? faces.r : faces.g);  // North or South
+    }
+}
+
 /* DDA ray cast.  Returns wall type (>0 on hit, 0 on miss). */
-int castRay(vec2 rd, out int side, out float perpDist) {
+int castRay(vec2 rd, out int side, out float perpDist, out int hitMapX, out int hitMapY) {
     int mapX = int(playerPos.x), mapY = int(playerPos.y);
 
     float ddX = (rd.x == 0.0) ? 1e30 : abs(1.0 / rd.x);
@@ -115,10 +142,14 @@ int castRay(vec2 rd, out int side, out float perpDist) {
             if (side == 0) perpDist = (float(mapX) - playerPos.x + float(1 - stepX) * 0.5) / rd.x;
             else           perpDist = (float(mapY) - playerPos.y + float(1 - stepY) * 0.5) / rd.y;
             if (perpDist < 0.001) perpDist = 0.001;
+            hitMapX = mapX;
+            hitMapY = mapY;
             return cell;
         }
     }
     perpDist = 1e30;
+    hitMapX = 0;
+    hitMapY = 0;
     return 0;
 }
 
@@ -159,8 +190,8 @@ void main() {
             float rLen = length(rDir);
             if (rLen < 0.001) continue;
 
-            int rSide; float rDist;
-            castRay(rDir, rSide, rDist);
+            int rSide, rHitX, rHitY; float rDist;
+            castRay(rDir, rSide, rDist, rHitX, rHitY);
             if (rDist > 15.0) rDist = 15.0;
 
             vec2  d = vec2(worldX, worldY) - playerPos;
@@ -185,10 +216,10 @@ void main() {
         /* ============ MAIN RAYCASTING ============ */
         float camX = 2.0 * px / screenSize.x - 1.0;
         vec2  rd   = playerDir + playerPlane * camX;
-
-        int   side;
+    
+        int   side, hitMapX, hitMapY;
         float perpDist;
-        int   wallType = castRay(rd, side, perpDist);
+        int   wallType = castRay(rd, side, perpDist, hitMapX, hitMapY);
         bool  hit      = wallType > 0;
 
         int lineH     = (perpDist < 1e20) ? int(screenSize.y / perpDist) : 0;
@@ -241,8 +272,8 @@ void main() {
 
             float texV = clamp(float(iy - drawStart) / float(max(lineH, 1)), 0.0, 1.0);
 
-            int texIdx = wallType - 1;
-            if (texIdx < 0 || texIdx >= 4) texIdx = 0;
+            // Use per-face texture instead of single wallType
+            int texIdx = getFaceTexture(hitMapX, hitMapY, side, rd);
 
             color = texture(wallTex, vec3(texU, texV, float(texIdx))).rgb;
 
@@ -295,6 +326,37 @@ void main() {
 
             if (sc.a > 0.5) color = sc.rgb;  // alpha clip
         }
+    }
+
+    // ---- POST-PROCESSING EFFECTS ----
+
+    // 1. Vignette — darkens screen edges based on distance from centre
+    {
+        vec2  centre = vec2(0.5);
+        float dist   = length(uv - centre) * 1.41421;  // normalised 0–1 corner
+        float vig    = 1.0 - smoothstep(0.3, 1.0, dist) * vignette;
+        color *= vig;
+    }
+
+    // 2. Damage flash — red tint overlay
+    if (damageFlash > 0.0) {
+        float f = damageFlash * damageFlash;  // ease-in so it hits hard then fades
+        color = mix(color, vec3(1.0, 0.05, 0.05), f * 0.45);
+    }
+
+    // 3. Heal flash — green tint overlay
+    if (healFlash > 0.0) {
+        float f = healFlash * healFlash;
+        color = mix(color, vec3(0.1, 1.0, 0.1), f * 0.35);
+    }
+
+    // 4. Low health pulse — slow red heartbeat at the screen edge
+    if (damageFlash <= 0.0 && playerHealthFrac < 0.3) {
+        float pulse = sin(float(int(gl_FragCoord.x)) * 0.01) * 0.5 + 0.5;  // pseudo-time using x coord
+        vec2  centre = vec2(0.5);
+        float edgeDist = length(uv - centre);
+        color = mix(color, vec3(0.8, 0.0, 0.0),
+                    pulse * (1.0 - playerHealthFrac * 3.0) * smoothstep(0.3, 0.7, edgeDist) * 0.4);
     }
 
     fragColor = vec4(color, 1.0);
@@ -368,6 +430,16 @@ void initRenderer(int w, int h) {
     uSpritePos  = glGetUniformLocation(prog, "spritePos");
     uSpriteType = glGetUniformLocation(prog, "spriteType");
     uNumSprites = glGetUniformLocation(prog, "numSprites");
+
+    // Screen effects uniforms
+    uDamageFlash   = glGetUniformLocation(prog, "damageFlash");
+    uHealFlash     = glGetUniformLocation(prog, "healFlash");
+    uVignette      = glGetUniformLocation(prog, "vignette");
+    uMotionBlur    = glGetUniformLocation(prog, "motionBlur");
+    uHealthFrac    = glGetUniformLocation(prog, "playerHealthFrac");
+
+    // Face texture uniform
+    uFaceTex = glGetUniformLocation(prog, "faceTex");
 
     /* ---- wall textures → 2-D array texture (unit 1) ---- */
     {
@@ -467,6 +539,27 @@ void uploadMapTexture() {
                      GL_RED_INTEGER, GL_UNSIGNED_BYTE, md);
         delete[] md;
         printf("Uploaded map texture: %dx%d\n", map::mapWidth, map::mapHeight);
+
+        // Upload face map as RGBA8UI texture (R=N, G=S, B=E, A=W)
+        uint8_t* fd = new uint8_t[map::mapWidth * map::mapHeight * 4];
+        for (int y = 0; y < map::mapHeight; y++)
+            for (int x = 0; x < map::mapWidth; x++) {
+                int idx = (y * map::mapWidth + x) * 4;
+                fd[idx+0] = map::faceMap[y][x][FACE_N];
+                fd[idx+1] = map::faceMap[y][x][FACE_S];
+                fd[idx+2] = map::faceMap[y][x][FACE_E];
+                fd[idx+3] = map::faceMap[y][x][FACE_W];
+            }
+
+        glGenTextures(1, &faceTexGL);
+        glBindTexture(GL_TEXTURE_2D, faceTexGL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8UI,
+                     map::mapWidth, map::mapHeight, 0,
+                     GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, fd);
+        delete[] fd;
+        printf("Uploaded face texture: %dx%d\n", map::mapWidth, map::mapHeight);
     }
 }
 
@@ -485,6 +578,16 @@ void renderFrame() {
 
     // Pass player height for parallax jumping effect
     glUniform1f(uPlayerHeight, player::player.posZ);
+
+    // Screen effects uniforms
+    float healthFrac = (float)player::player.health / (float)player::player.maxHealth;
+    float vignetteStrength = 0.15f + (1.0f - healthFrac) * 0.5f;  // 0.15 baseline, rises to 0.65 at 0 hp
+    
+    glUniform1f(uDamageFlash, player::player.damageFlash);
+    glUniform1f(uHealFlash,   player::player.healFlash);
+    glUniform1f(uVignette,    vignetteStrength);
+    glUniform1f(uMotionBlur,  0.0f);  // Can be hooked to rotation delta later
+    glUniform1f(uHealthFrac,  healthFrac);
 
     // Combine map sprites, projectiles, and enemies
     int totalSprites = 0;
@@ -551,6 +654,7 @@ void renderFrame() {
     glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D,       floorTexGL);
     glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D,       skyTexGL);
     glActiveTexture(GL_TEXTURE4); glBindTexture(GL_TEXTURE_2D_ARRAY, spriteTexArray);
+    glActiveTexture(GL_TEXTURE6); glBindTexture(GL_TEXTURE_2D,       faceTexGL);
 
     /* draw - explicitly bind VAO to prevent state pollution */
     glBindVertexArray(vao);
@@ -564,6 +668,7 @@ void cleanupRenderer() {
     glDeleteTextures(1, &floorTexGL);
     glDeleteTextures(1, &skyTexGL);
     glDeleteTextures(1, &spriteTexArray);
+    glDeleteTextures(1, &faceTexGL);
     glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);
     glDeleteProgram(prog);
