@@ -34,7 +34,7 @@ static unsigned int floorTexGL;     /* RGBA8 – floor                     */
 static unsigned int skyTexGL;       /* RGBA8 – sky panorama              */
 
 /* cached uniform locations */
-static int uPlayerPos, uPlayerDir, uPlayerPlane;
+static int uPlayerPos, uPlayerDir, uPlayerPlane, uPlayerHeight;
 static int uScreenSize, uMapSize;
 static int uLightingEnabled, uMinimapEnabled;
 
@@ -61,6 +61,7 @@ out vec4 fragColor;
 uniform vec2  playerPos;
 uniform vec2  playerDir;
 uniform vec2  playerPlane;
+uniform float playerHeight;   // Player's Z position (jumping)
 uniform vec2  screenSize;
 uniform ivec2 mapSize;
 uniform bool  lightingEnabled;
@@ -118,6 +119,7 @@ void main() {
     int   ix = int(px);
     int   iy = int(py);
     int   halfH = int(screenSize.y) / 2;
+    int   horizon = halfH;
 
     /* minimap bounds */
     const int mmSz = 160, mmOx = 10, mmOy = 10;
@@ -179,8 +181,12 @@ void main() {
         bool  hit      = wallType > 0;
 
         int lineH     = (perpDist < 1e20) ? int(screenSize.y / perpDist) : 0;
-        int drawStart = -lineH / 2 + halfH;
-        int drawEnd   =  lineH / 2 + halfH;
+
+        // Vertical offset for jumping - creates parallax effect
+        // Objects closer move more than distant objects
+        float vertOffset = (playerHeight / perpDist) * float(halfH);
+        int drawStart = -lineH / 2 + horizon + int(vertOffset);
+        int drawEnd   =  lineH / 2 + horizon + int(vertOffset);
 
         if (iy < drawStart || !hit) {
             /* ---- SKY ---- */
@@ -191,9 +197,9 @@ void main() {
 
         } else if (iy > drawEnd) {
             /* ---- FLOOR ---- */
-            int p = iy - halfH;
+            int p = iy - horizon;
             if (p < 1) p = 1;
-            float rowDist = (0.5 * screenSize.y) / float(p);
+            float rowDist = (float(halfH) * (1.0 + playerHeight)) / float(p);
             vec2  f = playerPos + rowDist * rd;
             color = texture(floorTex, fract(f)).rgb;
 
@@ -294,6 +300,7 @@ void initRenderer(int w, int h) {
     uPlayerPos       = glGetUniformLocation(prog, "playerPos");
     uPlayerDir       = glGetUniformLocation(prog, "playerDir");
     uPlayerPlane     = glGetUniformLocation(prog, "playerPlane");
+    uPlayerHeight    = glGetUniformLocation(prog, "playerHeight");
     uScreenSize      = glGetUniformLocation(prog, "screenSize");
     uMapSize         = glGetUniformLocation(prog, "mapSize");
     uLightingEnabled = glGetUniformLocation(prog, "lightingEnabled");
@@ -327,7 +334,7 @@ void initRenderer(int w, int h) {
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-        static const char* wallPath = "resource/textures/texture_3_dark_dirt_stones.png";
+        static const char* wallPath = "resource/textures/wall/texture_3_dark_dirt_stones.png";
         int tw, th, tc;
         unsigned char* raw = stbi_load(wallPath, &tw, &th, &tc, 4);
         unsigned char* buf = new unsigned char[TEX_SZ * TEX_SZ * 4];
@@ -351,12 +358,12 @@ void initRenderer(int w, int h) {
     }
 
     /* ---- floor texture (unit 2) ---- */
-    if (!loadAndUploadTex2D("resource/textures/texture_3_grass_blue_flowers.png",
+    if (!loadAndUploadTex2D("resource/textures/floor/texture_1_grass_yellow_flowers.png",
                             &floorTexGL, TEX_SZ, TEX_SZ, GL_REPEAT, GL_REPEAT))
         makeFallbackTex(&floorTexGL, 50, 35, 15);
 
     /* ---- sky texture (unit 3) ---- */
-    if (!loadAndUploadTex2D("resource/textures/sky_0.png",
+    if (!loadAndUploadTex2D("resource/textures/sky/sky_0.png",
                             &skyTexGL, SKY_W, SKY_H, GL_REPEAT, GL_CLAMP_TO_EDGE))
         makeFallbackTex(&skyTexGL, 10, 12, 25);
 
@@ -395,6 +402,7 @@ void renderFrame() {
     glUniform2f(uPlayerPos,   player::player.posX,   player::player.posY);
     glUniform2f(uPlayerDir,   player::player.dirX,   player::player.dirY);
     glUniform2f(uPlayerPlane, player::player.planeX, player::player.planeY);
+    glUniform1f(uPlayerHeight, player::player.posZ);
     glUniform2f(uScreenSize,  (float)scrW,            (float)scrH);
     glUniform2i(uMapSize,     map::mapWidth,           map::mapHeight);
     glUniform1i(uLightingEnabled, input::lightingEnabled ? 1 : 0);

@@ -1,5 +1,6 @@
 # Build and binary artifacts
 mingw64/*
+alt-source/*
 *.exe
 *.lib
 *.o

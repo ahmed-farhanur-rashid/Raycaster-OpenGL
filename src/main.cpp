@@ -25,11 +25,15 @@ int main() {
 
     player::initPlayer();
     renderer::initRenderer(SCREEN_W, SCREEN_H);
+    input::initMouse(window);
 
     printf("=== Raycaster Controls ===\n");
     printf("W/S or Up/Down   - Move forward/backward\n");
     printf("A/D              - Strafe left/right\n");
+    printf("Shift            - Sprint\n");
     printf("Left/Right arrow - Rotate\n");
+    printf("Mouse            - Look left/right\n");
+    printf("Space            - Jump\n");
     printf("M                - Toggle minimap\n");
     printf("L                - Toggle lighting\n");
     printf("ESC              - Quit\n");
