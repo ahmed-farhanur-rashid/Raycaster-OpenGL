@@ -14,7 +14,9 @@
 #include "../entities/projectile.h"
 #include "../entities/enemy.h"
 #include "sprite_registry.h"
+#include "spatial_grid.h"
 #include "shader.h"
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -616,37 +618,74 @@ void renderFrame() {
         allSprites[totalSprites++] = { enemy::enemies[i].x, enemy::enemies[i].y, enemy::enemies[i].currentSprite };
     }
 
-    // Sort farthest first
+    // Sort farthest first using spatial grid + std::sort
     struct SortedSprite {
         float dist;
         int   idx;
     };
-    SortedSprite sorted[MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES];
-    for (int i = 0; i < totalSprites; i++) {
-        float dx = allSprites[i].x - player::player.posX;
-        float dy = allSprites[i].y - player::player.posY;
-        sorted[i] = { dx*dx + dy*dy, i };
-    }
-    // Insertion sort
-    for (int i = 1; i < totalSprites; i++) {
-        SortedSprite key = sorted[i];
-        int j = i - 1;
-        while (j >= 0 && sorted[j].dist < key.dist) { sorted[j+1] = sorted[j]; j--; }
-        sorted[j+1] = key;
-    }
+    
+    // Rebuild spatial grid once per frame
+    grid::clear();
+    for (int i = 0; i < totalSprites; i++)
+        grid::insert(i, allSprites[i].x, allSprites[i].y);
 
-    // Upload sorted positions, types
+    // Query only sprites within draw distance (16 world units)
+    int visibleIdx[MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES];
+    int visibleCount = grid::query(player::player.posX, player::player.posY,
+                                   16.0f,  // draw distance
+                                   visibleIdx, MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES);
+
+    // Frustum culling: check if sprite is in front of camera and within FOV
+    int culledIdx[MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES];
+    int culledCount = 0;
+    
+    for (int i = 0; i < visibleCount; i++) {
+        int idx = visibleIdx[i];
+        float dx = allSprites[idx].x - player::player.posX;
+        float dy = allSprites[idx].y - player::player.posY;
+        
+        // Dot with player direction — must be in front
+        float dot = dx * player::player.dirX + dy * player::player.dirY;
+        if (dot < 0.1f) continue;
+        
+        // Check if within horizontal FOV
+        float invDet = 1.0f / (player::player.planeX * player::player.dirY
+                              - player::player.dirX  * player::player.planeY);
+        float transX = invDet * (player::player.dirY * dx - player::player.dirX * dy);
+        float transY = invDet * (-player::player.planeY * dx + player::player.planeX * dy);
+        
+        if (transY <= 0.0f) continue;
+        float camX = transX / transY;
+        if (camX > -1.3f && camX < 1.3f) {
+            culledIdx[culledCount++] = idx;
+        }
+    }
+    
+    // Sort only the visible subset using std::sort (farthest first)
+    SortedSprite sorted[MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES];
+    for (int i = 0; i < culledCount; i++) {
+        int idx = culledIdx[i];
+        float dx = allSprites[idx].x - player::player.posX;
+        float dy = allSprites[idx].y - player::player.posY;
+        sorted[i] = { dx*dx + dy*dy, idx };
+    }
+    
+    std::sort(sorted, sorted + culledCount, [](const SortedSprite& a, const SortedSprite& b){
+        return a.dist > b.dist;  // farthest first
+    });
+
+    // Upload sorted positions, types (only visible sprites)
     float spritePosData[(MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES) * 2];
     int   spriteTypeData[MAX_SPRITES + MAX_PROJECTILES + MAX_ENEMIES];
-    for (int i = 0; i < totalSprites; i++) {
+    for (int i = 0; i < culledCount; i++) {
         int idx = sorted[i].idx;
         spritePosData[i*2+0] = allSprites[idx].x;
         spritePosData[i*2+1] = allSprites[idx].y;
         spriteTypeData[i]    = allSprites[idx].type;
     }
-    glUniform2fv(uSpritePos,  totalSprites, spritePosData);
-    glUniform1iv(uSpriteType, totalSprites, spriteTypeData);
-    glUniform1i (uNumSprites, totalSprites);
+    glUniform2fv(uSpritePos,  culledCount, spritePosData);
+    glUniform1iv(uSpriteType, culledCount, spriteTypeData);
+    glUniform1i (uNumSprites, culledCount);
 
     /* bind textures to their units */
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,       mapTexGL);
