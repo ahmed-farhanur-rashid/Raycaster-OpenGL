@@ -14,6 +14,7 @@
 #include "renderer/projectile_renderer.h"
 #include "renderer/menu_renderer.h"
 #include "settings/settings.h"
+#include "circular_sprite/circular_sprite.h"
 
 int main() {
     settings::load("src/settings/config.json", "src/settings/keybind.json");
@@ -40,6 +41,7 @@ int main() {
     projectile_renderer::initProjectileRenderer(SCREEN_W, SCREEN_H);
     menu_renderer::initMenu(SCREEN_W, SCREEN_H);
     projectile::initProjectiles();
+    circular_sprite::init(SCREEN_W, SCREEN_H);
 
     game::setState(GameState::MAIN_MENU);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
@@ -75,9 +77,11 @@ int main() {
         case GameState::PLAYING: {
             input::processInput(window, deltaTime);
             projectile::updateProjectiles(deltaTime);
+            circular_sprite::update(deltaTime);
 
             renderer::RenderState rs = renderer::buildRenderState();
             renderer::renderFrame(rs);
+            circular_sprite::render(rs);
             projectile_renderer::renderProjectiles(rs);
             minimap::renderMinimap(rs);
             hud::renderWeapon();
@@ -89,6 +93,7 @@ int main() {
         glfwPollEvents();
     }
 
+    circular_sprite::cleanup();
     menu_renderer::cleanupMenu();
     hud::cleanupHUD();
     projectile_renderer::cleanupProjectileRenderer();

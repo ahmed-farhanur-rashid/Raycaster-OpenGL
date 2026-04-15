@@ -84,5 +84,18 @@
 
     // Rendering — fog and wall shading
     "fog_density": 0.04,
-    "wall_side_darkening": 0.5
+    "wall_side_darkening": 0.5,
+
+    // Circular sprite (midpoint circle algorithm target)
+    "sprite_circle_tex_size": 32,
+    "sprite_circle_radius": 14,
+    "sprite_circle_hit_radius": 0.5,
+    "sprite_circle_visual_scale": 0.4,
+    "sprite_circle_fill_r": 220,
+    "sprite_circle_fill_g": 50,
+    "sprite_circle_fill_b": 50,
+    "sprite_circle_outline_r": 255,
+    "sprite_circle_outline_g": 255,
+    "sprite_circle_outline_b": 255,
+    "sprite_circle_outline_width": 2
 }

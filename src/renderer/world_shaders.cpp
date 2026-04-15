@@ -80,9 +80,10 @@ int castRay(vec2 rd, out int side, out float perpDist) {
 }
 
 /* ---- rendering helpers ---- */
-vec3 renderSky(float camX, float py) {
+vec3 renderSky(vec2 rd, float py) {
     int halfH = int(screenSize.y) / 2;
-    float u = (camX + 1.0) * 0.5;
+    float angle = atan(rd.y, rd.x);             // world-space heading, -PI..PI
+    float u = angle / (2.0 * PI) + 0.5;         // wrap to 0..1
     float v = clamp(py / float(halfH), 0.0, 1.0);
     return texture(skyTex, vec2(u, v)).rgb;
 }
@@ -160,7 +161,7 @@ void main() {
 
     vec3 color;
     if (iy < drawStart || !hit) {
-        color = renderSky(camX, py);
+        color = renderSky(rd, py);
     } else if (iy > drawEnd) {
         color = renderFloor(rd, py);
     } else {
