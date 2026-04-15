@@ -105,19 +105,19 @@ void processInput(GLFWwindow* window, float deltaTime) {
     bool lmbNow = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     bool rmbNow = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
 
-    /* for non-energy weapons, RMB fires grenade on press */
-    if (hud::currentWeapon() != WeaponType::ENERGY_WEAPON) {
-        if (rmbNow && !rmbWasPressed) hud::fireGrenade();
-    }
-    rmbWasPressed = rmbNow;
-
     bool rNow = glfwGetKey(window, settings::getKey("reload", GLFW_KEY_R)) == GLFW_PRESS;
     if (rNow && !rKeyWasPressed) hud::reload();
     rKeyWasPressed = rNow;
 
-    /* update HUD bob + animation */
+    /* update HUD bob + animation (clears firedThisFrame/firedAltThisFrame) */
     bool isMoving = (forward != 0.0f || strafe != 0.0f);
     hud::updateHUD(isMoving, deltaTime, lmbNow, rmbNow);
+
+    /* fire grenade AFTER updateHUD so firedAltThisFrame survives the clear */
+    if (hud::currentWeapon() != WeaponType::ENERGY_WEAPON) {
+        if (rmbNow && !rmbWasPressed) hud::fireGrenade();
+    }
+    rmbWasPressed = rmbNow;
 
     /* detect weapon fire → spawn projectile or hitscan
        Uses firedThisFrame() which is set by the weapon's auto-fire logic,
