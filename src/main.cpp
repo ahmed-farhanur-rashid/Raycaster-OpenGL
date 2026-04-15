@@ -7,15 +7,16 @@
 #include "map/map.h"
 #include "player/player.h"
 #include "renderer/map_renderer.h"
+#include "renderer/minimap_renderer.h"
 #include "renderer/hud_renderer.h"
 #include "settings/settings.h"
 
 int main() {
     /* load settings before anything else (no GL needed) */
-    settings::load("resource/config.json", "resource/keybind.json");
+    settings::load("src/settings/config.json", "src/settings/keybind.json");
 
-    const int SCREEN_W = settings::getInt("screen_width",  800);
-    const int SCREEN_H = settings::getInt("screen_height", 600);
+    const int SCREEN_W = settings::getInt("screen_width",  1280);
+    const int SCREEN_H = settings::getInt("screen_height", 720);
 
     window::initGLFW();
     glfwSwapInterval(1); // enable vsync
@@ -31,6 +32,7 @@ int main() {
 
     player::initPlayer();
     renderer::initRenderer(SCREEN_W, SCREEN_H);
+    minimap::initMinimap(SCREEN_W, SCREEN_H);
     hud::initHUD(SCREEN_W, SCREEN_H);
     input::initMouse(window);
 
@@ -63,7 +65,21 @@ int main() {
 
         input::processInput(window, deltaTime);
 
-        renderer::renderFrame();
+        renderer::RenderState rs;
+        rs.posX   = player::player.posX;
+        rs.posY   = player::player.posY;
+        rs.dirX   = player::player.dirX;
+        rs.dirY   = player::player.dirY;
+
+        rs.planeX = player::player.planeX;
+        rs.planeY = player::player.planeY;
+
+        rs.posZ   = player::player.posZ;
+        rs.lightingEnabled = input::lightingEnabled;
+        rs.minimapEnabled  = input::minimapEnabled;
+
+        renderer::renderFrame(rs);
+        minimap::renderMinimap(rs);
         hud::renderWeapon();
 
         glfwSwapBuffers(window);
@@ -71,6 +87,7 @@ int main() {
     }
 
     hud::cleanupHUD();
+    minimap::cleanupMinimap();
     renderer::cleanupRenderer();
     glfwTerminate();
     return 0;

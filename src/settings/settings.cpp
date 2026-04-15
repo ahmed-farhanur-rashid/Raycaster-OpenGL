@@ -67,23 +67,6 @@ static int keyNameToGLFW(const char* name) {
 /*  minimal flat-JSON parser                                           */
 /* ------------------------------------------------------------------ */
 
-static const char* skipWS(const char* p) {
-    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
-    return p;
-}
-
-static const char* parseString(const char* p, std::string& out) {
-    if (*p != '"') return nullptr;
-    p++;
-    out.clear();
-    while (*p && *p != '"') {
-        if (*p == '\\' && *(p + 1)) { out += *(p + 1); p += 2; }
-        else { out += *p; p++; }
-    }
-    if (*p == '"') p++;
-    return p;
-}
-
 static bool parseFile(const char* path, std::map<std::string, Value>& map) {
     FILE* f = fopen(path, "rb");
     if (!f) return false;
@@ -92,42 +75,60 @@ static bool parseFile(const char* path, std::map<std::string, Value>& map) {
     long sz = ftell(f);
     fseek(f, 0, SEEK_SET);
 
-    char* buf = new char[sz + 1];
-    fread(buf, 1, (size_t)sz, f);
-    buf[sz] = '\0';
+    std::string buf(sz, '\0');
+    fread(&buf[0], 1, (size_t)sz, f);
     fclose(f);
 
-    const char* p = skipWS(buf);
-    if (*p != '{') { delete[] buf; return false; }
-    p = skipWS(p + 1);
+    size_t pos = 0;
 
-    while (*p && *p != '}') {
+    // skip whitespace helper using index
+    auto skipWSIdx = [&]() {
+        while (pos < buf.size() && (buf[pos] == ' ' || buf[pos] == '\t' || buf[pos] == '\n' || buf[pos] == '\r')) pos++;
+    };
+
+    // parse string helper using index
+    auto parseStringIdx = [&](std::string& out) -> bool {
+        if (pos >= buf.size() || buf[pos] != '"') return false;
+        pos++;
+        out.clear();
+        while (pos < buf.size() && buf[pos] != '"') {
+            if (buf[pos] == '\\' && pos + 1 < buf.size()) { out += buf[pos + 1]; pos += 2; }
+            else { out += buf[pos]; pos++; }
+        }
+        if (pos < buf.size() && buf[pos] == '"') pos++;
+        return true;
+    };
+
+    skipWSIdx();
+    if (pos >= buf.size() || buf[pos] != '{') return false;
+    pos++;
+    skipWSIdx();
+
+    while (pos < buf.size() && buf[pos] != '}') {
         std::string key;
-        p = parseString(p, key);
-        if (!p) break;
+        if (!parseStringIdx(key)) break;
 
-        p = skipWS(p);
-        if (*p != ':') break;
-        p = skipWS(p + 1);
+        skipWSIdx();
+        if (pos >= buf.size() || buf[pos] != ':') break;
+        pos++;
+        skipWSIdx();
 
         Value val;
-        if (*p == '"') {
+        if (pos < buf.size() && buf[pos] == '"') {
             val.type = Value::STR;
-            p = parseString(p, val.str);
-            if (!p) break;
+            if (!parseStringIdx(val.str)) break;
         } else {
             val.type = Value::NUM;
             char* end;
-            val.num = strtof(p, &end);
-            p = end;
+            val.num = strtof(buf.c_str() + pos, &end);
+            pos = end - buf.c_str();
         }
         map[key] = val;
 
-        p = skipWS(p);
-        if (*p == ',') p = skipWS(p + 1);
+        skipWSIdx();
+        if (pos < buf.size() && buf[pos] == ',') { pos++; skipWSIdx(); }
     }
 
-    delete[] buf;
     return true;
 }
 

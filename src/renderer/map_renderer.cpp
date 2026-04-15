@@ -8,13 +8,13 @@
 
 #include <glad/glad.h>
 #include "map_renderer.h"
+#include "world_shaders.h"
 #include "../map/map.h"
-#include "../player/player.h"
-#include "../core/input.h"
 #include "shader.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 #include <stb/stb_image.h>
 
 /* ===== constants ===== */
@@ -36,224 +36,23 @@ static unsigned int skyTexGL;       /* RGBA8 – sky panorama              */
 /* cached uniform locations */
 static int uPlayerPos, uPlayerDir, uPlayerPlane, uPlayerHeight;
 static int uScreenSize, uMapSize;
-static int uLightingEnabled, uMinimapEnabled;
+static int uLightingEnabled;
 
-/* ================================================================== */
-/*                           GLSL shaders                             */
-/* ================================================================== */
 
-static const char* vsrc = R"(
-#version 330 core
-layout(location=0) in vec2 aPos;
-layout(location=1) in vec2 aUV;
-out vec2 uv;
-void main() {
-    gl_Position = vec4(aPos, 0.0, 1.0);
-    uv = aUV;
-}
-)";
-
-static const char* fsrc = R"(
-#version 330 core
-in  vec2 uv;
-out vec4 fragColor;
-
-uniform vec2  playerPos;
-uniform vec2  playerDir;
-uniform vec2  playerPlane;
-uniform float playerHeight;   // Player's Z position (jumping)
-uniform vec2  screenSize;
-uniform ivec2 mapSize;
-uniform bool  lightingEnabled;
-uniform bool  minimapEnabled;
-
-uniform usampler2D    mapTex;
-uniform sampler2DArray wallTex;
-uniform sampler2D     floorTex;
-uniform sampler2D     skyTex;
-
-#define PI        3.14159265359
-#define MAX_STEPS 256
-
-/* ---- helpers ---- */
-int getMap(int x, int y) {
-    if (x < 0 || x >= mapSize.x || y < 0 || y >= mapSize.y) return 1;
-    return int(texelFetch(mapTex, ivec2(x, y), 0).r);
-}
-
-/* DDA ray cast.  Returns wall type (>0 on hit, 0 on miss). */
-int castRay(vec2 rd, out int side, out float perpDist) {
-    int mapX = int(playerPos.x), mapY = int(playerPos.y);
-
-    float ddX = (rd.x == 0.0) ? 1e30 : abs(1.0 / rd.x);
-    float ddY = (rd.y == 0.0) ? 1e30 : abs(1.0 / rd.y);
-    float sdX, sdY;
-    int   stepX, stepY;
-
-    if (rd.x < 0.0) { stepX = -1; sdX = (playerPos.x - float(mapX)) * ddX; }
-    else             { stepX =  1; sdX = (float(mapX) + 1.0 - playerPos.x) * ddX; }
-    if (rd.y < 0.0) { stepY = -1; sdY = (playerPos.y - float(mapY)) * ddY; }
-    else             { stepY =  1; sdY = (float(mapY) + 1.0 - playerPos.y) * ddY; }
-
-    side = 0;
-    for (int i = 0; i < MAX_STEPS; i++) {
-        if (sdX < sdY) { sdX += ddX; mapX += stepX; side = 0; }
-        else            { sdY += ddY; mapY += stepY; side = 1; }
-        int cell = getMap(mapX, mapY);
-        if (cell > 0) {
-            if (side == 0) perpDist = (float(mapX) - playerPos.x + float(1 - stepX) * 0.5) / rd.x;
-            else           perpDist = (float(mapY) - playerPos.y + float(1 - stepY) * 0.5) / rd.y;
-            if (perpDist < 0.001) perpDist = 0.001;
-            return cell;
-        }
-    }
-    perpDist = 1e30;
-    return 0;
-}
-
-/* ---- main ---- */
-void main() {
-    /* pixel coords: (0,0) = top-left */
-    float px = uv.x * screenSize.x;
-    float py = uv.y * screenSize.y;
-    int   ix = int(px);
-    int   iy = int(py);
-    int   halfH = int(screenSize.y) / 2;
-    int   horizon = halfH;
-
-    /* minimap bounds */
-    const int mmSz = 160, mmOx = 10, mmOy = 10;
-    bool inMinimap = minimapEnabled
-                  && ix >= mmOx && ix < mmOx + mmSz
-                  && iy >= mmOy && iy < mmOy + mmSz;
-
-    vec3 color;
-
-    if (inMinimap) {
-        /* ============ MINIMAP ============ */
-        float worldX = float(ix - mmOx) / float(mmSz) * float(mapSize.x);
-        float worldY = float(iy - mmOy) / float(mmSz) * float(mapSize.y);
-        float cpp    = float(max(mapSize.x, mapSize.y)) / float(mmSz);
-
-        color = vec3(0.0);                     /* black background */
-
-        /* wall cells */
-        if (getMap(int(worldX), int(worldY)) > 0)
-            color = vec3(0.78);
-
-        /* 11 sample-ray lines */
-        for (int r = 0; r <= 10; r++) {
-            float rc  = 2.0 * float(r) / 10.0 - 1.0;
-            vec2  rDir = playerDir + playerPlane * rc;
-            float rLen = length(rDir);
-            if (rLen < 0.001) continue;
-
-            int rSide; float rDist;
-            castRay(rDir, rSide, rDist);
-            if (rDist > 15.0) rDist = 15.0;
-
-            vec2  d = vec2(worldX, worldY) - playerPos;
-            float t = dot(d, rDir) / dot(rDir, rDir);
-            float crossDist = abs(d.x * rDir.y - d.y * rDir.x) / rLen;
-            if (t > 0.0 && t < rDist && crossDist < cpp * 0.7)
-                color = vec3(0.0, 0.7, 0.0);
-        }
-
-        /* player dot */
-        if (length(vec2(worldX, worldY) - playerPos) < cpp * 2.5)
-            color = vec3(1.0, 0.0, 0.0);
-
-        /* direction line */
-        vec2  dv = vec2(worldX, worldY) - playerPos;
-        float dt = dot(dv, playerDir);
-        float dc = abs(dv.x * playerDir.y - dv.y * playerDir.x);
-        if (dt > 0.0 && dt < 3.0 && dc < cpp * 0.7)
-            color = vec3(1.0, 1.0, 0.0);
-
-    } else {
-        /* ============ MAIN RAYCASTING ============ */
-        float camX = 2.0 * px / screenSize.x - 1.0;
-        vec2  rd   = playerDir + playerPlane * camX;
-
-        int   side;
-        float perpDist;
-        int   wallType = castRay(rd, side, perpDist);
-        bool  hit      = wallType > 0;
-
-        int lineH     = (perpDist < 1e20) ? int(screenSize.y / perpDist) : 0;
-
-        // Vertical offset for jumping - creates parallax effect
-        // Objects closer move more than distant objects
-        float vertOffset = (playerHeight / perpDist) * float(halfH);
-        int drawStart = -lineH / 2 + horizon + int(vertOffset);
-        int drawEnd   =  lineH / 2 + horizon + int(vertOffset);
-
-        if (iy < drawStart || !hit) {
-            /* ---- SKY ---- */
-            float angle = atan(rd.y, rd.x);
-            float u = (angle + PI) / (2.0 * PI);
-            float v = clamp(float(iy) / float(halfH), 0.0, 1.0);
-            color = texture(skyTex, vec2(u, v)).rgb;
-
-        } else if (iy > drawEnd) {
-            /* ---- FLOOR ---- */
-            int p = iy - horizon;
-            if (p < 1) p = 1;
-            float rowDist = (float(halfH) * (1.0 + playerHeight)) / float(p);
-            vec2  f = playerPos + rowDist * rd;
-            color = texture(floorTex, fract(f)).rgb;
-
-            if (lightingEnabled) {
-                float shade = 1.0 / (1.0 + rowDist * rowDist * 0.04);
-                color *= shade;
-            }
-
-        } else {
-            /* ---- WALL ---- */
-            float wallX = (side == 0)
-                        ? playerPos.y + perpDist * rd.y
-                        : playerPos.x + perpDist * rd.x;
-            wallX = fract(wallX);
-
-            float texU = wallX;
-            if (side == 0 && rd.x > 0.0) texU = 1.0 - texU;
-            if (side == 1 && rd.y < 0.0) texU = 1.0 - texU;
-
-            float texV = clamp(float(iy - drawStart) / float(max(lineH, 1)), 0.0, 1.0);
-
-            int texIdx = wallType - 1;
-            if (texIdx < 0 || texIdx >= 4) texIdx = 0;
-
-            color = texture(wallTex, vec3(texU, texV, float(texIdx))).rgb;
-
-            /* EW-side darkening */
-            if (side == 1) color *= 0.5;
-
-            /* distance fog */
-            if (lightingEnabled) {
-                float shade = 1.0 / (1.0 + perpDist * perpDist * 0.04);
-                color *= shade;
-            }
-        }
-    }
-
-    fragColor = vec4(color, 1.0);
-}
-)";
 
 /* ================================================================== */
 /*                     texture upload helpers                         */
 /* ================================================================== */
 
 /* Load a PNG, resample to destW×destH, upload to a new GL_TEXTURE_2D. */
-static bool loadAndUploadTex2D(const char* path, unsigned int* texID,
-                                int destW, int destH,
-                                unsigned int wrapS, unsigned int wrapT) {
+static unsigned int loadAndUploadTex2D(const char* path,
+                                       int destW, int destH,
+                                       unsigned int wrapS, unsigned int wrapT) {
     int w, h, ch;
     unsigned char* data = stbi_load(path, &w, &h, &ch, 4);
-    if (!data) { fprintf(stderr, "WARNING: could not load %s\n", path); return false; }
+    if (!data) { fprintf(stderr, "WARNING: could not load %s\n", path); return 0; }
 
-    unsigned char* buf = new unsigned char[destW * destH * 4];
+    std::vector<uint8_t> buf(destW * destH * 4);
     for (int y = 0; y < destH; y++)
         for (int x = 0; x < destW; x++) {
             int sx = x * w / destW, sy = y * h / destH;
@@ -261,27 +60,29 @@ static bool loadAndUploadTex2D(const char* path, unsigned int* texID,
         }
     stbi_image_free(data);
 
-    glGenTextures(1, texID);
-    glBindTexture(GL_TEXTURE_2D, *texID);
+    unsigned int texID;
+    glGenTextures(1, &texID);
+    glBindTexture(GL_TEXTURE_2D, texID);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapS);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapT);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, destW, destH, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, buf);
-    delete[] buf;
-    return true;
+                 GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
+    return texID;
 }
 
 /* Create a 1×1 solid-colour fallback texture. */
-static void makeFallbackTex(unsigned int* texID, uint8_t r, uint8_t g, uint8_t b) {
+static unsigned int makeFallbackTex(uint8_t r, uint8_t g, uint8_t b) {
     unsigned char px[4] = { r, g, b, 255 };
-    glGenTextures(1, texID);
-    glBindTexture(GL_TEXTURE_2D, *texID);
+    unsigned int texID;
+    glGenTextures(1, &texID);
+    glBindTexture(GL_TEXTURE_2D, texID);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, px);
+    return texID;
 }
 
 /* ================================================================== */
@@ -295,7 +96,8 @@ void initRenderer(int w, int h) {
     scrH = h;
 
     /* ---- compile GPU program ---- */
-    prog = shader::createShaderProgram(vsrc, fsrc);
+    prog = shader::createShaderProgram(world_shaders::vertexSource,
+                                       world_shaders::fragmentSource);
 
     uPlayerPos       = glGetUniformLocation(prog, "playerPos");
     uPlayerDir       = glGetUniformLocation(prog, "playerDir");
@@ -304,11 +106,10 @@ void initRenderer(int w, int h) {
     uScreenSize      = glGetUniformLocation(prog, "screenSize");
     uMapSize         = glGetUniformLocation(prog, "mapSize");
     uLightingEnabled = glGetUniformLocation(prog, "lightingEnabled");
-    uMinimapEnabled  = glGetUniformLocation(prog, "minimapEnabled");
 
     /* ---- upload map grid as R8UI texture (unit 0) ---- */
     {
-        uint8_t* md = new uint8_t[map::mapWidth * map::mapHeight];
+        std::vector<uint8_t> md(map::mapWidth * map::mapHeight);
         for (int y = 0; y < map::mapHeight; y++)
             for (int x = 0; x < map::mapWidth; x++)
                 md[y * map::mapWidth + x] = (uint8_t)map::worldMap[y][x];
@@ -318,8 +119,7 @@ void initRenderer(int w, int h) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, map::mapWidth, map::mapHeight, 0,
-                     GL_RED_INTEGER, GL_UNSIGNED_BYTE, md);
-        delete[] md;
+                     GL_RED_INTEGER, GL_UNSIGNED_BYTE, md.data());
     }
 
     /* ---- wall textures → 2-D array texture (unit 1) ---- */
@@ -337,7 +137,7 @@ void initRenderer(int w, int h) {
         static const char* wallPath = "resource/textures/wall/texture_3_dark_dirt_stones.png";
         int tw, th, tc;
         unsigned char* raw = stbi_load(wallPath, &tw, &th, &tc, 4);
-        unsigned char* buf = new unsigned char[TEX_SZ * TEX_SZ * 4];
+        std::vector<uint8_t> buf(TEX_SZ * TEX_SZ * 4);
 
         if (raw) {
             for (int y = 0; y < TEX_SZ; y++)
@@ -348,24 +148,25 @@ void initRenderer(int w, int h) {
             stbi_image_free(raw);
         } else {
             fprintf(stderr, "WARNING: could not load %s\n", wallPath);
-            memset(buf, 0x80, TEX_SZ * TEX_SZ * 4);
+            memset(buf.data(), 0x80, TEX_SZ * TEX_SZ * 4);
         }
 
         for (int i = 0; i < N_WALL_TEX; i++)
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i,
-                            TEX_SZ, TEX_SZ, 1, GL_RGBA, GL_UNSIGNED_BYTE, buf);
-        delete[] buf;
+                            TEX_SZ, TEX_SZ, 1, GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
     }
 
     /* ---- floor texture (unit 2) ---- */
-    if (!loadAndUploadTex2D("resource/textures/floor/texture_1_grass_yellow_flowers.png",
-                            &floorTexGL, TEX_SZ, TEX_SZ, GL_REPEAT, GL_REPEAT))
-        makeFallbackTex(&floorTexGL, 50, 35, 15);
+    floorTexGL = loadAndUploadTex2D("resource/textures/floor/texture_1_grass_yellow_flowers.png",
+                                    TEX_SZ, TEX_SZ, GL_REPEAT, GL_REPEAT);
+    if (!floorTexGL)
+        floorTexGL = makeFallbackTex(50, 35, 15);
 
     /* ---- sky texture (unit 3) ---- */
-    if (!loadAndUploadTex2D("resource/textures/sky/sky_0.png",
-                            &skyTexGL, SKY_W, SKY_H, GL_REPEAT, GL_CLAMP_TO_EDGE))
-        makeFallbackTex(&skyTexGL, 10, 12, 25);
+    skyTexGL = loadAndUploadTex2D("resource/textures/sky/sky_0.png",
+                                  SKY_W, SKY_H, GL_REPEAT, GL_CLAMP_TO_EDGE);
+    if (!skyTexGL)
+        skyTexGL = makeFallbackTex(10, 12, 25);
 
     /* ---- full-screen quad VAO/VBO ---- */
     float quad[] = {
@@ -394,19 +195,18 @@ void initRenderer(int w, int h) {
     glUniform1i(glGetUniformLocation(prog, "skyTex"),   3);
 }
 
-void renderFrame() {
+void renderFrame(const RenderState& state) {
     glClear(GL_COLOR_BUFFER_BIT);
     glUseProgram(prog);
 
     /* per-frame uniforms */
-    glUniform2f(uPlayerPos,   player::player.posX,   player::player.posY);
-    glUniform2f(uPlayerDir,   player::player.dirX,   player::player.dirY);
-    glUniform2f(uPlayerPlane, player::player.planeX, player::player.planeY);
-    glUniform1f(uPlayerHeight, player::player.posZ);
+    glUniform2f(uPlayerPos,   state.posX,   state.posY);
+    glUniform2f(uPlayerDir,   state.dirX,   state.dirY);
+    glUniform2f(uPlayerPlane, state.planeX, state.planeY);
+    glUniform1f(uPlayerHeight, state.posZ);
     glUniform2f(uScreenSize,  (float)scrW,            (float)scrH);
     glUniform2i(uMapSize,     map::mapWidth,           map::mapHeight);
-    glUniform1i(uLightingEnabled, input::lightingEnabled ? 1 : 0);
-    glUniform1i(uMinimapEnabled,  input::minimapEnabled  ? 1 : 0);
+    glUniform1i(uLightingEnabled, state.lightingEnabled ? 1 : 0);
 
     /* bind textures to their units */
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,       mapTexGL);
@@ -414,7 +214,7 @@ void renderFrame() {
     glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D,       floorTexGL);
     glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D,       skyTexGL);
 
-    /* draw */
+    /* draw main scene */
     glBindVertexArray(vao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }

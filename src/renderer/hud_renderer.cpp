@@ -211,9 +211,15 @@ void renderWeapon() {
 
     unsigned int curTex = getWeaponTexture(*active);
 
-    /* weapon quad — positioned at bottom, shifted right */
-    float x0 = -0.5f + bobOffsetX;
-    float x1 =  1.1f + bobOffsetX;
+    /* weapon quad — positioned at bottom, shifted right.
+       The base coordinates were designed for 4:3.  Correct the
+       horizontal extent so the sprite keeps its proportions.     */
+    float aspect = (float)scrW / (float)scrH;
+    float ax = (4.0f / 3.0f) / aspect;   /* 1.0 at 4:3, 0.75 at 16:9 */
+    float cx = 0.3f;   /* horizontal centre of the sprite quad */
+    float hw = 0.8f * ax;   /* half-width, aspect-corrected */
+    float x0 = cx - hw + bobOffsetX;
+    float x1 = cx + hw + bobOffsetX;
     float y0 = -1.0f + bobOffsetY;
     float y1 =  0.2f + bobOffsetY;
 
