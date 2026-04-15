@@ -18,6 +18,7 @@ int main() {
     const int SCREEN_H = settings::getInt("screen_height", 600);
 
     window::initGLFW();
+    glfwSwapInterval(1); // enable vsync
     GLFWwindow* window = window::createWindow(SCREEN_W, SCREEN_H, "Raycaster");
     window::initGLAD();
     glViewport(0, 0, SCREEN_W, SCREEN_H);
