@@ -22,10 +22,10 @@ static void hgAdvanceAnim(Weapon& w, float dt) {
 Weapon createHandgun() {
     Weapon w;
     w.type      = WeaponType::HANDGUN;
-    w.fireDur   = settings::getFloat("hg_fire_duration", 0.15f);
+    w.fireDur   = settings::getFloat("handgun_fire_duration", 0.15f);
     w.unlimited = true;
 
-    w.recoilKick = 0.04f;
+    w.recoilKick = settings::getFloat("handgun_recoil", 0.04f);
 
     w.handleFire  = hgHandleFire;
     w.advanceAnim = hgAdvanceAnim;

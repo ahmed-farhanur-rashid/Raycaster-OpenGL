@@ -5,7 +5,7 @@ LIBS     = -Llib \
            -lglfw3 \
            -lopengl32 -lgdi32 -lwinmm -luser32 \
            -static-libgcc -static-libstdc++
-SOURCES  = src/*.cpp src/*.c src/core/*.cpp src/renderer/*.cpp src/map/*.cpp src/player/*.cpp src/weapons/*.cpp src/settings/*.cpp src/entity/*.cpp
+SOURCES  = src/*.cpp src/*.c src/core/*.cpp src/renderer/*.cpp src/map/*.cpp src/player/*.cpp src/weapons/*.cpp src/settings/*.cpp src/projectile/*.cpp
 
 all: build/main.exe
 

@@ -1,7 +1,7 @@
 #include "input.h"
 #include "../player/player.h"
 #include "../renderer/hud_renderer.h"
-#include "../entity/entity.h"
+#include "../projectile/projectile.h"
 #include "../settings/settings.h"
 #include <cmath>
 
@@ -130,40 +130,48 @@ void processInput(GLFWwindow* window, float deltaTime) {
         float dy = player::player.dirY;
         /* perpendicular (right) vector for slight muzzle offset */
         float rx = -dy, ry = dx;
-        float oFwd  = settings::getFloat("proj_offset_forward", 0.6f);
-        float oSide = settings::getFloat("proj_offset_side",    0.15f);
+        float oFwd  = settings::getFloat("projectile_offset_forward", 0.6f);
+        float oSide = settings::getFloat("projectile_offset_side",    0.15f);
 
         switch (wt) {
         case WeaponType::ASSAULT_RIFLE: {
-            float range = settings::getFloat("ar_range",  20.0f);
-            entity::spawnProjectile(px + dx * oFwd + rx * oSide,
-                                    py + dy * oFwd + ry * oSide,
-                                    dx, dy, 30.0f, ProjOwner::PLAYER, 0,
-                                    range, 0.06f, pz);
+            float range = settings::getFloat("assault_rifle_range",  20.0f);
+            float speed = settings::getFloat("assault_rifle_projectile_speed", 30.0f);
+            float scale = settings::getFloat("assault_rifle_projectile_scale", 0.06f);
+            projectile::spawnProjectile(px + dx * oFwd + rx * oSide,
+                                        py + dy * oFwd + ry * oSide,
+                                        dx, dy, speed, ProjOwner::PLAYER, 0,
+                                        range, scale, pz);
             break;
         }
         case WeaponType::SHOTGUN: {
-            float range = settings::getFloat("sg_range",  8.0f);
-            entity::spawnProjectile(px + dx * oFwd + rx * oSide,
-                                    py + dy * oFwd + ry * oSide,
-                                    dx, dy, 18.0f, ProjOwner::PLAYER, 2,
-                                    range, 0.18f, pz);
+            float range = settings::getFloat("shotgun_range",  8.0f);
+            float speed = settings::getFloat("shotgun_projectile_speed", 18.0f);
+            float scale = settings::getFloat("shotgun_projectile_scale", 0.18f);
+            projectile::spawnProjectile(px + dx * oFwd + rx * oSide,
+                                        py + dy * oFwd + ry * oSide,
+                                        dx, dy, speed, ProjOwner::PLAYER, 2,
+                                        range, scale, pz);
             break;
         }
         case WeaponType::ENERGY_WEAPON: {
-            float range = settings::getFloat("en_range",  25.0f);
-            entity::spawnProjectile(px + dx * oFwd + rx * oSide,
-                                    py + dy * oFwd + ry * oSide,
-                                    dx, dy, 20.0f, ProjOwner::PLAYER, 1,
-                                    range, 0.10f, pz);
+            float range = settings::getFloat("energy_range",  25.0f);
+            float speed = settings::getFloat("energy_projectile_speed", 20.0f);
+            float scale = settings::getFloat("energy_projectile_scale", 0.10f);
+            projectile::spawnProjectile(px + dx * oFwd + rx * oSide,
+                                        py + dy * oFwd + ry * oSide,
+                                        dx, dy, speed, ProjOwner::PLAYER, 1,
+                                        range, scale, pz);
             break;
         }
         case WeaponType::HANDGUN: {
-            float range = settings::getFloat("hg_range",  18.0f);
-            entity::spawnProjectile(px + dx * oFwd + rx * oSide,
-                                    py + dy * oFwd + ry * oSide,
-                                    dx, dy, 28.0f, ProjOwner::PLAYER, 0,
-                                    range, 0.07f, pz);
+            float range = settings::getFloat("handgun_range",  18.0f);
+            float speed = settings::getFloat("handgun_projectile_speed", 28.0f);
+            float scale = settings::getFloat("handgun_projectile_scale", 0.07f);
+            projectile::spawnProjectile(px + dx * oFwd + rx * oSide,
+                                        py + dy * oFwd + ry * oSide,
+                                        dx, dy, speed, ProjOwner::PLAYER, 0,
+                                        range, scale, pz);
             break;
         }
         default: break;
@@ -179,24 +187,28 @@ void processInput(GLFWwindow* window, float deltaTime) {
         float dx = player::player.dirX;
         float dy = player::player.dirY;
         float rx = -dy, ry = dx;
-        float oFwd  = settings::getFloat("proj_offset_forward", 0.6f);
-        float oSide = settings::getFloat("proj_offset_side",    0.15f);
+        float oFwd  = settings::getFloat("projectile_offset_forward", 0.6f);
+        float oSide = settings::getFloat("projectile_offset_side",    0.15f);
 
         switch (wt) {
         case WeaponType::ASSAULT_RIFLE: {
-            float range = settings::getFloat("ar_grenade_range",  6.0f);
-            entity::spawnProjectile(px + dx * oFwd + rx * oSide,
-                                    py + dy * oFwd + ry * oSide,
-                                    dx, dy, 12.0f, ProjOwner::PLAYER, 2,
-                                    range, 0.22f, pz);
+            float range = settings::getFloat("assault_rifle_grenade_range",  6.0f);
+            float speed = settings::getFloat("assault_rifle_grenade_speed", 12.0f);
+            float scale = settings::getFloat("assault_rifle_grenade_scale", 0.22f);
+            projectile::spawnProjectile(px + dx * oFwd + rx * oSide,
+                                        py + dy * oFwd + ry * oSide,
+                                        dx, dy, speed, ProjOwner::PLAYER, 2,
+                                        range, scale, pz);
             break;
         }
         case WeaponType::ENERGY_WEAPON: {
-            float range = settings::getFloat("en_range",  25.0f);
-            entity::spawnProjectile(px + dx * oFwd + rx * oSide,
-                                    py + dy * oFwd + ry * oSide,
-                                    dx, dy, 20.0f, ProjOwner::PLAYER, 1,
-                                    range, 0.10f, pz);
+            float range = settings::getFloat("energy_range",  25.0f);
+            float speed = settings::getFloat("energy_projectile_speed", 20.0f);
+            float scale = settings::getFloat("energy_projectile_scale", 0.10f);
+            projectile::spawnProjectile(px + dx * oFwd + rx * oSide,
+                                        py + dy * oFwd + ry * oSide,
+                                        dx, dy, speed, ProjOwner::PLAYER, 1,
+                                        range, scale, pz);
             break;
         }
         default: break;

@@ -9,7 +9,7 @@
 namespace settings {
 
 /* ------------------------------------------------------------------ */
-/*  internal data                                                      */
+/*  internal data                                                     */
 /* ------------------------------------------------------------------ */
 
 struct Value {
@@ -22,7 +22,7 @@ static std::map<std::string, Value> configMap;
 static std::map<std::string, int>   keybindMap;
 
 /* ------------------------------------------------------------------ */
-/*  GLFW key-name table                                                */
+/*  GLFW key-name table                                               */
 /* ------------------------------------------------------------------ */
 
 static int keyNameToGLFW(const char* name) {
@@ -64,7 +64,7 @@ static int keyNameToGLFW(const char* name) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  minimal flat-JSON parser                                           */
+/*  minimal flat-JSON parser                                          */
 /* ------------------------------------------------------------------ */
 
 static bool parseFile(const char* path, std::map<std::string, Value>& map) {
@@ -81,9 +81,17 @@ static bool parseFile(const char* path, std::map<std::string, Value>& map) {
 
     size_t pos = 0;
 
-    // skip whitespace helper using index
+    // skip whitespace and // comments
     auto skipWSIdx = [&]() {
-        while (pos < buf.size() && (buf[pos] == ' ' || buf[pos] == '\t' || buf[pos] == '\n' || buf[pos] == '\r')) pos++;
+        while (pos < buf.size()) {
+            if (buf[pos] == ' ' || buf[pos] == '\t' || buf[pos] == '\n' || buf[pos] == '\r') { pos++; continue; }
+            if (pos + 1 < buf.size() && buf[pos] == '/' && buf[pos + 1] == '/') {
+                pos += 2;
+                while (pos < buf.size() && buf[pos] != '\n') pos++;
+                continue;
+            }
+            break;
+        }
     };
 
     // parse string helper using index
@@ -133,7 +141,7 @@ static bool parseFile(const char* path, std::map<std::string, Value>& map) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  public API                                                         */
+/*  public API                                                        */
 /* ------------------------------------------------------------------ */
 
 bool load(const char* configPath, const char* keybindPath) {

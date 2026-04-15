@@ -8,6 +8,7 @@
 #include <glad/glad.h>
 #include "minimap_renderer.h"
 #include "../map/map.h"
+#include "../settings/settings.h"
 #include "shader.h"
 #include <cstdint>
 #include <cstdio>
@@ -15,13 +16,13 @@
 #include <vector>
 
 /* ===== constants ===== */
-#define MM_SZ 160
+static int mmSz = 160;
 
 /* ===== module state ===== */
 static int scrW, scrH;
 static unsigned int minimapTexGL;
 static unsigned int mmVao, mmVbo, mmProg;
-static std::vector<uint8_t> mmPixels(MM_SZ * MM_SZ * 4);
+static std::vector<uint8_t> mmPixels;
 
 /* ===== shaders ===== */
 static const char* mmVsrc = R"(
@@ -82,8 +83,8 @@ static float cpuCastRay(float posX, float posY, float rdx, float rdy) {
 }
 
 static void setPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
-    if (x < 0 || x >= MM_SZ || y < 0 || y >= MM_SZ) return;
-    int idx = (y * MM_SZ + x) * 4;
+    if (x < 0 || x >= mmSz || y < 0 || y >= mmSz) return;
+    int idx = (y * mmSz + x) * 4;
     mmPixels[idx + 0] = r;
     mmPixels[idx + 1] = g;
     mmPixels[idx + 2] = b;
@@ -93,13 +94,13 @@ static void setPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
 static void updateMinimapTexture(const renderer::RenderState& state) {
     float mw = (float)map::mapWidth;
     float mh = (float)map::mapHeight;
-    float cpp = (float)(map::mapWidth > map::mapHeight ? map::mapWidth : map::mapHeight) / (float)MM_SZ;
+    float cpp = (float)(map::mapWidth > map::mapHeight ? map::mapWidth : map::mapHeight) / (float)mmSz;
 
     /* background: wall cells light grey, floor cells black */
-    for (int y = 0; y < MM_SZ; y++)
-        for (int x = 0; x < MM_SZ; x++) {
-            float wx = (float)x / (float)MM_SZ * mw;
-            float wy = (float)y / (float)MM_SZ * mh;
+    for (int y = 0; y < mmSz; y++)
+        for (int x = 0; x < mmSz; x++) {
+            float wx = (float)x / (float)mmSz * mw;
+            float wy = (float)y / (float)mmSz * mh;
             bool wall = cpuGetMap((int)wx, (int)wy) > 0;
             uint8_t c = wall ? 199 : 0; /* 0.78 * 255 ≈ 199 */
             setPixel(x, y, c, c, c);
@@ -122,15 +123,15 @@ static void updateMinimapTexture(const renderer::RenderState& state) {
         for (float t = 0.0f; t < dist * rLen; t += step) {
             float wx = state.posX + nrdx * t;
             float wy = state.posY + nrdy * t;
-            int px = (int)(wx / mw * (float)MM_SZ);
-            int py = (int)(wy / mh * (float)MM_SZ);
+            int px = (int)(wx / mw * (float)mmSz);
+            int py = (int)(wy / mh * (float)mmSz);
             setPixel(px, py, 0, 178, 0); /* vec3(0.0, 0.7, 0.0) */
         }
     }
 
     /* player dot — red, 2-pixel radius */
-    int pcx = (int)(state.posX / mw * (float)MM_SZ);
-    int pcy = (int)(state.posY / mh * (float)MM_SZ);
+    int pcx = (int)(state.posX / mw * (float)mmSz);
+    int pcy = (int)(state.posY / mh * (float)mmSz);
     int rad = (int)(cpp * 2.5f + 0.5f);
     if (rad < 2) rad = 2;
     for (int dy = -rad; dy <= rad; dy++)
@@ -148,15 +149,15 @@ static void updateMinimapTexture(const renderer::RenderState& state) {
         for (float t = 0.0f; t < lineLen; t += step) {
             float wx = state.posX + ndx * t;
             float wy = state.posY + ndy * t;
-            int px = (int)(wx / mw * (float)MM_SZ);
-            int py = (int)(wy / mh * (float)MM_SZ);
+            int px = (int)(wx / mw * (float)mmSz);
+            int py = (int)(wy / mh * (float)mmSz);
             setPixel(px, py, 255, 255, 0);
         }
     }
 
     /* upload to GPU */
     glBindTexture(GL_TEXTURE_2D, minimapTexGL);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, MM_SZ, MM_SZ,
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, mmSz, mmSz,
                     GL_RGBA, GL_UNSIGNED_BYTE, mmPixels.data());
 }
 
@@ -168,12 +169,15 @@ void initMinimap(int w, int h) {
     scrW = w;
     scrH = h;
 
+    mmSz = settings::getInt("minimap_size", 160);
+    mmPixels.resize(mmSz * mmSz * 4);
+
     /* texture */
     glGenTextures(1, &minimapTexGL);
     glBindTexture(GL_TEXTURE_2D, minimapTexGL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, MM_SZ, MM_SZ, 0,
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mmSz, mmSz, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
     /* shader */
@@ -181,12 +185,13 @@ void initMinimap(int w, int h) {
     glUseProgram(mmProg);
     glUniform1i(glGetUniformLocation(mmProg, "mmTex"), 0);
 
-    /* quad — top-left corner, 10px margin, 160×160px */
-    float mmOx = 10.0f, mmOy = 10.0f;
+    /* quad — top-left corner */
+    float mmOx = settings::getFloat("minimap_margin", 10.0f);
+    float mmOy = mmOx;
     float l = mmOx / (float)scrW * 2.0f - 1.0f;
-    float r = (mmOx + (float)MM_SZ) / (float)scrW * 2.0f - 1.0f;
+    float r = (mmOx + (float)mmSz) / (float)scrW * 2.0f - 1.0f;
     float t = 1.0f - mmOy / (float)scrH * 2.0f;
-    float b = 1.0f - (mmOy + (float)MM_SZ) / (float)scrH * 2.0f;
+    float b = 1.0f - (mmOy + (float)mmSz) / (float)scrH * 2.0f;
 
     float mmQuad[] = {
         l, b,  0, 1,

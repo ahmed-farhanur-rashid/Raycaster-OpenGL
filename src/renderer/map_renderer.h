@@ -15,6 +15,8 @@ namespace renderer {
     void initRenderer(int screenW, int screenH);
     void renderFrame(const RenderState& state);
     void cleanupRenderer();
+
+    RenderState buildRenderState();
 }
 
 #endif

@@ -61,23 +61,23 @@ Weapon createAssaultRifle() {
     w.type = WeaponType::ASSAULT_RIFLE;
 
     /* timing from config */
-    w.fireDur          = settings::getFloat("ar_fire_duration",      0.12f);
-    w.altFireDur       = settings::getFloat("ar_grenade_duration",   0.25f);
-    w.animFrameDur     = settings::getFloat("ar_reload_duration",    0.10f);
+    w.fireDur          = settings::getFloat("assault_rifle_fire_duration",      0.12f);
+    w.altFireDur       = settings::getFloat("assault_rifle_grenade_duration",   0.25f);
+    w.animFrameDur     = settings::getFloat("assault_rifle_reload_duration",    0.10f);
     w.autoFire         = true;
-    w.autoFireInterval = settings::getFloat("ar_auto_fire_interval", 0.07f);
+    w.autoFireInterval = settings::getFloat("assault_rifle_auto_fire_interval", 0.07f);
 
     /* ammo */
     w.unlimited = false;
-    w.maxAmmo1  = settings::getInt("ar_max_bullets",  30);
+    w.maxAmmo1  = settings::getInt("assault_rifle_max_bullets",  30);
     w.ammo1     = w.maxAmmo1;
-    w.maxAmmo2  = settings::getInt("ar_max_grenades", 5);
+    w.maxAmmo2  = settings::getInt("assault_rifle_max_grenades", 5);
     w.ammo2     = w.maxAmmo2;
     w.hasAltFire = true;
 
     /* recoil */
-    w.recoilKick    = 0.04f;
-    w.altRecoilKick = 0.06f;
+    w.recoilKick    = settings::getFloat("assault_rifle_recoil", 0.04f);
+    w.altRecoilKick = settings::getFloat("assault_rifle_grenade_recoil", 0.06f);
 
     /* bars */
     w.bar1 = { true, 0.9f, 0.7f, 0.1f };  /* gold — bullets  */

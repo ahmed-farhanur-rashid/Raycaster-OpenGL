@@ -42,11 +42,11 @@ Weapon createShotgun() {
     Weapon w;
     w.type = WeaponType::SHOTGUN;
 
-    w.fireDur      = settings::getFloat("sg_fire_duration",  0.15f);
-    w.animFrameDur = settings::getFloat("sg_reload_duration", 0.10f);
+    w.fireDur      = settings::getFloat("shotgun_fire_duration",  0.15f);
+    w.animFrameDur = settings::getFloat("shotgun_reload_duration", 0.10f);
     w.unlimited    = true;
 
-    w.recoilKick = 0.07f;
+    w.recoilKick = settings::getFloat("shotgun_recoil", 0.07f);
 
     w.handleFire  = sgHandleFire;
     w.advanceAnim = sgAdvanceAnim;

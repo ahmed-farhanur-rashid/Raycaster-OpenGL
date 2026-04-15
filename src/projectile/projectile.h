@@ -1,5 +1,5 @@
-#ifndef ENTITY_H
-#define ENTITY_H
+#ifndef PROJECTILE_H
+#define PROJECTILE_H
 
 #include <vector>
 
@@ -24,15 +24,14 @@ struct Projectile {
 };
 
 /* ================================================================== */
-/*  entity namespace — global state                                    */
+/*  projectile namespace — global state                                */
 /* ================================================================== */
 
-namespace entity {
+namespace projectile {
     extern std::vector<Projectile> projectiles;
 
     void initProjectiles();
 
-    /* combat.cpp */
     void spawnProjectile(float x, float y, float dirX, float dirY,
                          float speed, ProjOwner owner, int sprIdx,
                          float range, float visualScale, float spawnZ);

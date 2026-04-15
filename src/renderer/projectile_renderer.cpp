@@ -1,5 +1,5 @@
 /*
- * entity_renderer.cpp — Billboard sprite renderer for projectiles
+ * projectile_renderer.cpp — Billboard sprite renderer for projectiles
  *
  * Uses a CPU raycaster Z-buffer to correctly depth-test sprites against walls.
  * Projectiles are sorted back-to-front, then rendered as screen-space quads
@@ -7,9 +7,9 @@
  */
 
 #include <glad/glad.h>
-#include "entity_renderer.h"
+#include "projectile_renderer.h"
 #include "shader.h"
-#include "../entity/entity.h"
+#include "../projectile/projectile.h"
 #include "../map/map.h"
 #include "../settings/settings.h"
 #include <cmath>
@@ -23,14 +23,14 @@
 
 /* ===== module state ===== */
 static int scrW, scrH;
-static unsigned int entProg, entVao, entVbo;
+static unsigned int projProg, projVao, projVbo;
 static unsigned int projTexGL;      /* bullet projectile sprite            */
 static unsigned int projBeamTexGL;  /* energy beam sprite                  */
 static unsigned int projShotTexGL;  /* shotgun blast sprite                */
 static std::vector<float> zBuffer;  /* per-column wall distance            */
 
 /* ===== shaders ===== */
-static const char* evsrc = R"(
+static const char* projVsrc = R"(
 #version 330 core
 layout(location=0) in vec2 aPos;
 layout(location=1) in vec2 aUV;
@@ -41,7 +41,7 @@ void main() {
 }
 )";
 
-static const char* efsrc = R"(
+static const char* projFsrc = R"(
 #version 330 core
 in  vec2 uv;
 out vec4 fragColor;
@@ -56,7 +56,6 @@ void main() {
 
 /* ===== texture generation ===== */
 
-/* Generate a simple hardcoded projectile texture (bright circle) */
 static unsigned int makeProjectileTex() {
     const int sz = PROJ_TEX_SZ;
     std::vector<uint8_t> px(sz * sz * 4, 0);
@@ -92,7 +91,6 @@ static unsigned int makeProjectileTex() {
     return tex;
 }
 
-/* Generate blue energy beam texture */
 static unsigned int makeBeamTex() {
     const int sz = PROJ_TEX_SZ;
     std::vector<uint8_t> px(sz * sz * 4, 0);
@@ -104,7 +102,6 @@ static unsigned int makeBeamTex() {
             float d = sqrtf(dx * dx + dy * dy);
             int idx = (y * sz + x) * 4;
             if (d < half * 0.5f) {
-                /* bright white-blue core */
                 px[idx + 0] = 180;
                 px[idx + 1] = 220;
                 px[idx + 2] = 255;
@@ -133,7 +130,6 @@ static unsigned int makeBeamTex() {
     return tex;
 }
 
-/* Generate orange shotgun blast texture */
 static unsigned int makeShotgunTex() {
     const int sz = PROJ_TEX_SZ;
     std::vector<uint8_t> px(sz * sz * 4, 0);
@@ -206,16 +202,13 @@ static void buildZBuffer(const renderer::RenderState& s) {
 static void drawSprite(float screenX, float screenY, float sprW, float sprH,
                        float perpDist, unsigned int texID,
                        float tintR, float tintG, float tintB, float tintA) {
-    /* compute screen rect */
     float x0 = screenX - sprW / 2.0f;
     float x1 = screenX + sprW / 2.0f;
     float y0 = screenY - sprH / 2.0f;
     float y1 = screenY + sprH / 2.0f;
 
-    /* clip to screen */
     if (x1 < 0 || x0 >= scrW || y1 < 0 || y0 >= scrH) return;
 
-    /* column-based z-buffer check: skip if all columns are behind walls */
     int colStart = (int)fmaxf(x0, 0.0f);
     int colEnd   = (int)fminf(x1, (float)(scrW - 1));
     bool anyVisible = false;
@@ -224,10 +217,9 @@ static void drawSprite(float screenX, float screenY, float sprW, float sprH,
     }
     if (!anyVisible) return;
 
-    /* convert pixel to NDC */
     float ndcX0 = 2.0f * x0 / (float)scrW - 1.0f;
     float ndcX1 = 2.0f * x1 / (float)scrW - 1.0f;
-    float ndcY0 = 1.0f - 2.0f * y1 / (float)scrH;  /* flip Y */
+    float ndcY0 = 1.0f - 2.0f * y1 / (float)scrH;
     float ndcY1 = 1.0f - 2.0f * y0 / (float)scrH;
 
     float verts[] = {
@@ -239,7 +231,7 @@ static void drawSprite(float screenX, float screenY, float sprW, float sprH,
 
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
 
-    int tintLoc = glGetUniformLocation(entProg, "tintColor");
+    int tintLoc = glGetUniformLocation(projProg, "tintColor");
     glUniform4f(tintLoc, tintR, tintG, tintB, tintA);
 
     glActiveTexture(GL_TEXTURE0);
@@ -250,27 +242,27 @@ static void drawSprite(float screenX, float screenY, float sprW, float sprH,
 /* sortable sprite entry */
 struct SpriteEntry {
     float dist;
-    float x, y;        /* world pos */
-    float spriteZ;     /* vertical offset */
-    int   projSprIdx;  /* 0=bullet, 1=beam, 2=shotgun */
-    float projScale;   /* per-projectile visual scale  */
+    float x, y;
+    float spriteZ;
+    int   sprIdx;
+    float scale;
 };
 
 /* ===== public API ===== */
 
-namespace entity_renderer {
+namespace projectile_renderer {
 
-void initEntityRenderer(int w, int h) {
+void initProjectileRenderer(int w, int h) {
     scrW = w;
     scrH = h;
 
-    entProg = shader::createShaderProgram(evsrc, efsrc);
+    projProg = shader::createShaderProgram(projVsrc, projFsrc);
 
     float quad[16] = {};
-    glGenVertexArrays(1, &entVao);
-    glGenBuffers(1, &entVbo);
-    glBindVertexArray(entVao);
-    glBindBuffer(GL_ARRAY_BUFFER, entVbo);
+    glGenVertexArrays(1, &projVao);
+    glGenBuffers(1, &projVbo);
+    glBindVertexArray(projVao);
+    glBindBuffer(GL_ARRAY_BUFFER, projVbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_DYNAMIC_DRAW);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
@@ -279,45 +271,43 @@ void initEntityRenderer(int w, int h) {
     glEnableVertexAttribArray(1);
     glBindVertexArray(0);
 
-    glUseProgram(entProg);
-    glUniform1i(glGetUniformLocation(entProg, "spriteTex"), 0);
+    glUseProgram(projProg);
+    glUniform1i(glGetUniformLocation(projProg, "spriteTex"), 0);
 
-    /* generate projectile textures */
     projTexGL     = makeProjectileTex();
     projBeamTexGL = makeBeamTex();
     projShotTexGL = makeShotgunTex();
 }
 
 void renderProjectiles(const renderer::RenderState& state) {
-    if (entity::projectiles.empty()) return;
+    if (projectile::projectiles.empty()) return;
 
     buildZBuffer(state);
 
-    /* collect all projectile sprites */
     std::vector<SpriteEntry> sprites;
-    sprites.reserve(entity::projectiles.size());
+    sprites.reserve(projectile::projectiles.size());
 
-    for (auto& p : entity::projectiles) {
+    for (auto& p : projectile::projectiles) {
         float ddx = p.x - state.posX;
         float ddy = p.y - state.posY;
-        float dist = ddx * ddx + ddy * ddy;
         SpriteEntry se{};
-        se.dist = dist; se.x = p.x; se.y = p.y; se.spriteZ = p.spawnZ;
-        se.projSprIdx = p.sprIdx;
-        se.projScale  = p.visualScale;
+        se.dist   = ddx * ddx + ddy * ddy;
+        se.x      = p.x;
+        se.y      = p.y;
+        se.spriteZ = p.spawnZ;
+        se.sprIdx = p.sprIdx;
+        se.scale  = p.visualScale;
         sprites.push_back(se);
     }
 
-    /* sort back to front */
     std::sort(sprites.begin(), sprites.end(),
               [](const SpriteEntry& a, const SpriteEntry& b) { return a.dist > b.dist; });
 
-    /* render */
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glUseProgram(entProg);
-    glBindVertexArray(entVao);
-    glBindBuffer(GL_ARRAY_BUFFER, entVbo);
+    glUseProgram(projProg);
+    glBindVertexArray(projVao);
+    glBindBuffer(GL_ARRAY_BUFFER, projVbo);
 
     float invDet = 1.0f / (state.planeX * state.dirY - state.dirX * state.planeY);
 
@@ -325,36 +315,33 @@ void renderProjectiles(const renderer::RenderState& state) {
         float sx = sp.x - state.posX;
         float sy = sp.y - state.posY;
 
-        /* transform to camera space */
         float transformX = invDet * (state.dirY * sx - state.dirX * sy);
         float transformY = invDet * (-state.planeY * sx + state.planeX * sy);
 
-        if (transformY <= 0.1f) continue; /* behind camera */
+        if (transformY <= 0.1f) continue;
 
         int sprScreenX = (int)((float)scrW / 2.0f * (1.0f + transformX / transformY));
 
         float sprHeight = fabsf((float)scrH / transformY);
-        float sprWidth  = sprHeight;  /* square sprites */
+        float sprWidth  = sprHeight;
 
-        sprHeight *= sp.projScale;
-        sprWidth  *= sp.projScale;
+        sprHeight *= sp.scale;
+        sprWidth  *= sp.scale;
 
         float screenY = (float)scrH / 2.0f;
-        /* apply player height offset */
         float vertOffset = (state.posZ / transformY) * ((float)scrH / 2.0f);
         screenY += vertOffset;
-        /* apply projectile's vertical position */
         float sprZ = sp.spriteZ;
-        sprZ -= settings::getFloat("proj_offset_down", 0.15f);
+        sprZ -= settings::getFloat("projectile_offset_down", 0.15f);
         if (sprZ != 0.0f) {
             float zOffset = (sprZ / transformY) * ((float)scrH / 2.0f);
             screenY -= zOffset;
         }
 
         unsigned int texID;
-        if (sp.projSprIdx == 1)      texID = projBeamTexGL;
-        else if (sp.projSprIdx == 2) texID = projShotTexGL;
-        else                         texID = projTexGL;
+        if (sp.sprIdx == 1)      texID = projBeamTexGL;
+        else if (sp.sprIdx == 2) texID = projShotTexGL;
+        else                     texID = projTexGL;
 
         drawSprite((float)sprScreenX, screenY, sprWidth, sprHeight,
                    transformY, texID,
@@ -365,13 +352,13 @@ void renderProjectiles(const renderer::RenderState& state) {
     glDisable(GL_BLEND);
 }
 
-void cleanupEntityRenderer() {
+void cleanupProjectileRenderer() {
     glDeleteTextures(1, &projTexGL);
     glDeleteTextures(1, &projBeamTexGL);
     glDeleteTextures(1, &projShotTexGL);
-    glDeleteVertexArrays(1, &entVao);
-    glDeleteBuffers(1, &entVbo);
-    glDeleteProgram(entProg);
+    glDeleteVertexArrays(1, &projVao);
+    glDeleteBuffers(1, &projVbo);
+    glDeleteProgram(projProg);
 }
 
-} // namespace entity_renderer
+} // namespace projectile_renderer

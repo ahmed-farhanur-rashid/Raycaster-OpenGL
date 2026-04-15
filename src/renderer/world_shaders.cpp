@@ -37,6 +37,8 @@ uniform usampler2D    mapTex;
 uniform sampler2DArray wallTex;
 uniform sampler2D     floorTex;
 uniform sampler2D     skyTex;
+uniform float         fogDensity;
+uniform float         wallSideDarken;
 
 #define PI        3.14159265359
 #define MAX_STEPS 256
@@ -94,7 +96,7 @@ vec3 renderFloor(vec2 rd, float py) {
     vec3 color = texture(floorTex, fract(f)).rgb;
 
     if (lightingEnabled) {
-        float shade = 1.0 / (1.0 + rowDist * rowDist * 0.04);
+        float shade = 1.0 / (1.0 + rowDist * rowDist * fogDensity);
         color *= shade;
     }
     return color;
@@ -123,11 +125,11 @@ vec3 renderWall(vec2 rd, int side, float perpDist, int wallType, float py, float
     vec3 color = texture(wallTex, vec3(texU, texV, float(texIdx))).rgb;
 
     /* EW-side darkening */
-    if (side == 1) color *= 0.5;
+    if (side == 1) color *= wallSideDarken;
 
     /* distance fog */
     if (lightingEnabled) {
-        float shade = 1.0 / (1.0 + perpDist * perpDist * 0.04);
+        float shade = 1.0 / (1.0 + perpDist * perpDist * fogDensity);
         color *= shade;
     }
     return color;

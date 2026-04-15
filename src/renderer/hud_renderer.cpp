@@ -1,6 +1,7 @@
 #include <glad/glad.h>
 #include "hud_renderer.h"
 #include "shader.h"
+#include "../settings/settings.h"
 #include <cstdio>
 #include <cmath>
 
@@ -120,13 +121,17 @@ void reload()      { if (active) weaponReload(*active); }
 void updateHUD(bool isMoving, float deltaTime, bool lmbHeld, bool rmbHeld) {
     /* bob animation — only sway horizontally and bob downward */
     if (isMoving && active && active->state == WeaponState::IDLE) {
-        bobTimer += deltaTime * 7.0f;
+        float bobSpeed = settings::getFloat("hud_bob_speed", 7.0f);
+        float bobV     = settings::getFloat("hud_bob_vertical", 0.015f);
+        float bobH     = settings::getFloat("hud_bob_horizontal", 0.012f);
+        bobTimer += deltaTime * bobSpeed;
         float raw = sinf(bobTimer);
-        bobOffsetY = (raw < 0.0f) ? raw * 0.015f : 0.0f;
-        bobOffsetX = cosf(bobTimer * 0.5f) * 0.012f;
+        bobOffsetY = (raw < 0.0f) ? raw * bobV : 0.0f;
+        bobOffsetX = cosf(bobTimer * 0.5f) * bobH;
     } else {
-        bobOffsetY *= 0.9f;
-        bobOffsetX *= 0.9f;
+        float decay = settings::getFloat("hud_bob_decay", 0.9f);
+        bobOffsetY *= decay;
+        bobOffsetX *= decay;
         if (!isMoving) bobTimer = 0.0f;
     }
 
@@ -211,12 +216,12 @@ void renderWeapon() {
        horizontal extent so the sprite keeps its proportions.     */
     float aspect = (float)scrW / (float)scrH;
     float ax = (4.0f / 3.0f) / aspect;   /* 1.0 at 4:3, 0.75 at 16:9 */
-    float cx = 0.3f;   /* horizontal centre of the sprite quad */
-    float hw = 0.8f * ax;   /* half-width, aspect-corrected */
+    float cx = settings::getFloat("hud_weapon_center_x", 0.3f);
+    float hw = settings::getFloat("hud_weapon_half_width", 0.8f) * ax;
     float x0 = cx - hw + bobOffsetX;
     float x1 = cx + hw + bobOffsetX;
-    float y0 = -1.0f + bobOffsetY;
-    float y1 =  0.2f + bobOffsetY;
+    float y0 = settings::getFloat("hud_weapon_bottom", -1.0f) + bobOffsetY;
+    float y1 = settings::getFloat("hud_weapon_top", 0.2f) + bobOffsetY;
 
     /* slight recoil kick during fire */
     if (active->state == WeaponState::FIRE_BULLET) {

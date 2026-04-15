@@ -10,6 +10,9 @@
 #include "map_renderer.h"
 #include "world_shaders.h"
 #include "../map/map.h"
+#include "../player/player.h"
+#include "../core/input.h"
+#include "../settings/settings.h"
 #include "shader.h"
 #include <cstdint>
 #include <cstdio>
@@ -193,6 +196,10 @@ void initRenderer(int w, int h) {
     glUniform1i(glGetUniformLocation(prog, "wallTex"),  1);
     glUniform1i(glGetUniformLocation(prog, "floorTex"), 2);
     glUniform1i(glGetUniformLocation(prog, "skyTex"),   3);
+    glUniform1f(glGetUniformLocation(prog, "fogDensity"),
+                settings::getFloat("fog_density", 0.04f));
+    glUniform1f(glGetUniformLocation(prog, "wallSideDarken"),
+                settings::getFloat("wall_side_darkening", 0.5f));
 }
 
 void renderFrame(const RenderState& state) {
@@ -227,6 +234,20 @@ void cleanupRenderer() {
     glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);
     glDeleteProgram(prog);
+}
+
+RenderState buildRenderState() {
+    RenderState rs;
+    rs.posX   = player::player.posX;
+    rs.posY   = player::player.posY;
+    rs.dirX   = player::player.dirX;
+    rs.dirY   = player::player.dirY;
+    rs.planeX = player::player.planeX;
+    rs.planeY = player::player.planeY;
+    rs.posZ   = player::player.posZ;
+    rs.lightingEnabled = input::lightingEnabled;
+    rs.minimapEnabled  = input::minimapEnabled;
+    return rs;
 }
 
 } // namespace renderer

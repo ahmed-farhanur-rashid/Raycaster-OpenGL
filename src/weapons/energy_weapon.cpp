@@ -47,7 +47,7 @@ static void enHandleFire(Weapon& w, float dt, bool lmb, bool rmb) {
                 w.autoFireTimer = 0.0f;
             } else {
                 w.autoFireTimer += dt;
-                float interval = settings::getFloat("en_fire_interval", 0.08f);
+                float interval = settings::getFloat("energy_fire_interval", 0.08f);
                 if (w.autoFireTimer >= interval) {
                     w.autoFireTimer -= interval;
                     w.firedThisFrame = true;
@@ -64,7 +64,7 @@ static void enHandleFire(Weapon& w, float dt, bool lmb, bool rmb) {
                 w.autoFireTimer = 0.0f;
             } else {
                 w.autoFireTimer += dt;
-                float interval = settings::getFloat("en_fire_interval", 0.08f);
+                float interval = settings::getFloat("energy_fire_interval", 0.08f);
                 if (w.autoFireTimer >= interval) {
                     w.autoFireTimer -= interval;
                     w.firedAltThisFrame = true;
@@ -99,18 +99,18 @@ Weapon createEnergyWeapon() {
     w.type     = WeaponType::ENERGY_WEAPON;
     w.isEnergy = true;
 
-    w.fireDur      = settings::getFloat("en_fire_duration",      0.12f);
+    w.fireDur      = settings::getFloat("energy_fire_duration",      0.12f);
     w.altFireDur   = w.fireDur;
-    w.animFrameDur = settings::getFloat("en_overheat_duration",  0.25f);
+    w.animFrameDur = settings::getFloat("energy_overheat_duration",  0.25f);
     w.unlimited    = true;
     w.hasAltFire   = true;
 
-    w.drainTime1   = settings::getFloat("en_drain_normal",       6.0f);
-    w.drainTime2   = settings::getFloat("en_drain_overcharge",   3.0f);
-    w.rechargeRate = settings::getFloat("en_recharge_rate",      0.15f);
+    w.drainTime1   = settings::getFloat("energy_drain_normal",       6.0f);
+    w.drainTime2   = settings::getFloat("energy_drain_overcharge",   3.0f);
+    w.rechargeRate = settings::getFloat("energy_recharge_rate",      0.15f);
 
-    w.recoilKick    = 0.04f;
-    w.altRecoilKick = 0.06f;
+    w.recoilKick    = settings::getFloat("energy_recoil", 0.04f);
+    w.altRecoilKick = settings::getFloat("energy_overcharge_recoil", 0.06f);
 
     /* bars */
     w.bar1 = { true, 0.1f, 0.8f, 0.9f };  /* cyan — normal    */
