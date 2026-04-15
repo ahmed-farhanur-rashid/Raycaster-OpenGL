@@ -49,11 +49,11 @@
     "sg_range": 8.0,
     "en_damage": 0.5,
     "en_range": 15.0,
-    "en_fire_interval": 0.001,
+    "en_fire_interval": 0.0001,
     "hg_damage": 15.0,
     "hg_range": 18.0,
 
     "proj_offset_forward": 0.2,
-    "proj_offset_side": 0.05,
-    "proj_offset_down": 0.15
+    "proj_offset_side": 0.075,
+    "proj_offset_down": 0.13
 }
