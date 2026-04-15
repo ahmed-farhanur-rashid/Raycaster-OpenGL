@@ -18,7 +18,7 @@ void initPlayer() {
     player.dirX = 1.0f;
     player.dirY = 0.0f;
     player.planeX = 0.0f;
-    player.planeY = 0.889f;   /* W/(2H) → correct 1:1 aspect at 16:9 */  
+    player.planeY = 0.666f;   /* W/(2H) → correct 1:1 aspect at 4:3 */  
     player.moveSpeed  = settings::getFloat("move_speed",     3.0f);
     player.sprintSpeed = settings::getFloat("sprint_speed",  4.5f);
     player.rotSpeed   = settings::getFloat("rotation_speed", 2.5f);

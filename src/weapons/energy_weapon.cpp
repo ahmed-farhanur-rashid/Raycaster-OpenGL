@@ -41,14 +41,39 @@ static void enHandleFire(Weapon& w, float dt, bool lmb, bool rmb) {
         if (w.state == WeaponState::IDLE || w.state == WeaponState::FIRE_BULLET) {
             w.state     = WeaponState::FIRE_BULLET;
             w.animTimer = 0.0f;
+            /* continuous beam: fire at interval */
+            if (!w.prevLmb) {
+                w.firedThisFrame = true;
+                w.autoFireTimer = 0.0f;
+            } else {
+                w.autoFireTimer += dt;
+                float interval = settings::getFloat("en_fire_interval", 0.08f);
+                if (w.autoFireTimer >= interval) {
+                    w.autoFireTimer -= interval;
+                    w.firedThisFrame = true;
+                }
+            }
         }
     } else if (rmb && !w.depleted2) {
         if (w.state == WeaponState::IDLE || w.state == WeaponState::FIRE_GRENADE) {
             w.state     = WeaponState::FIRE_GRENADE;
             w.animTimer = 0.0f;
+            /* continuous beam RMB */
+            if (!w.prevRmb) {
+                w.firedAltThisFrame = true;
+                w.autoFireTimer = 0.0f;
+            } else {
+                w.autoFireTimer += dt;
+                float interval = settings::getFloat("en_fire_interval", 0.08f);
+                if (w.autoFireTimer >= interval) {
+                    w.autoFireTimer -= interval;
+                    w.firedAltThisFrame = true;
+                }
+            }
         }
     } else if (!lmb && !rmb && w.state != WeaponState::RELOAD) {
         w.state = WeaponState::IDLE;
+        w.autoFireTimer = 0.0f;
     }
 }
 

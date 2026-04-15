@@ -47,6 +47,7 @@ void weaponFirePrimary(Weapon& w) {
     if (!w.unlimited) w.ammo1--;
     w.state     = WeaponState::FIRE_BULLET;
     w.animTimer = 0.0f;
+    w.firedThisFrame = true;
 }
 
 void weaponFireSecondary(Weapon& w) {
@@ -57,6 +58,7 @@ void weaponFireSecondary(Weapon& w) {
     if (!w.unlimited && w.maxAmmo2 > 0) w.ammo2--;
     w.state     = WeaponState::FIRE_GRENADE;
     w.animTimer = 0.0f;
+    w.firedAltThisFrame = true;
 }
 
 void weaponReload(Weapon& w) {
@@ -66,6 +68,8 @@ void weaponReload(Weapon& w) {
 }
 
 void updateWeapon(Weapon& w, float dt, bool lmb, bool rmb) {
+    w.firedThisFrame = false;
+    w.firedAltThisFrame = false;
     if (w.handleFire)  w.handleFire(w, dt, lmb, rmb);
     w.prevLmb = lmb;
     w.prevRmb = rmb;

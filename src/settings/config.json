@@ -1,5 +1,5 @@
 {
-    "screen_width": 1280,
+    "screen_width": 960,
     "screen_height": 720,
 
     "gravity": 14.0,
@@ -27,5 +27,33 @@
 
     "hg_fire_duration": 0.15,
 
-    "wall_height": 0.50
+    "wall_height": 0.50,
+
+    "ghost_spawn_enabled": 1,
+    "ghost_max_count": 5,
+    "ghost_spawn_interval": 6.0,
+    "ghost_spawn_distance": 8.0,
+    "ghost_hp": 50.0,
+    "ghost_damage": 8.0,
+    "ghost_speed": 1.4,
+    "ghost_agro_range": 8.0,
+    "ghost_attack_range": 1.0,
+    "ghost_attack_cooldown": 1.2,
+    "ghost_size": 1.0,
+
+    "ar_damage": 10.0,
+    "ar_range": 20.0,
+    "ar_grenade_damage": 25.0,
+    "ar_grenade_range": 6.0,
+    "sg_damage": 12.0,
+    "sg_range": 8.0,
+    "en_damage": 0.5,
+    "en_range": 15.0,
+    "en_fire_interval": 0.001,
+    "hg_damage": 15.0,
+    "hg_range": 18.0,
+
+    "proj_offset_forward": 0.2,
+    "proj_offset_side": 0.05,
+    "proj_offset_down": 0.15
 }

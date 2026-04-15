@@ -18,6 +18,8 @@ struct Weapon {
     float autoFireTimer = 0.0f;
     bool  prevLmb      = false;
     bool  prevRmb      = false;
+    bool  firedThisFrame = false;  /* set by weaponFirePrimary, cleared each frame */
+    bool  firedAltThisFrame = false; /* set by weaponFireSecondary, cleared each frame */
 
     /* GL texture handles */
     unsigned int texIdle    = 0;

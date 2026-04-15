@@ -23,6 +23,8 @@ namespace hud {
     int getMaxBullets();
     int getGrenades();
     int getMaxGrenades();
+    bool firedThisFrame();
+    bool firedAltThisFrame();    /* did weapon fire a bullet this frame? */
 }
 
 #endif
