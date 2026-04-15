@@ -45,7 +45,6 @@ Weapon createShotgun() {
     w.fireDur      = settings::getFloat("sg_fire_duration",  0.15f);
     w.animFrameDur = settings::getFloat("sg_reload_duration", 0.10f);
     w.unlimited    = true;
-    w.reloadAfterShot = true;
 
     w.recoilKick = 0.07f;
 

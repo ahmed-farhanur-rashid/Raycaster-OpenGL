@@ -25,7 +25,7 @@ static bool enterWasPressed = false;
 
 static void resetGame() {
     player::initPlayer();
-    entity::initSpawner();
+    entity::initProjectiles();
 }
 
 int main() {
@@ -53,7 +53,7 @@ int main() {
     hud::initHUD(SCREEN_W, SCREEN_H);
     entity_renderer::initEntityRenderer(SCREEN_W, SCREEN_H);
     menu_renderer::initMenu(SCREEN_W, SCREEN_H);
-    entity::initSpawner();
+    entity::initProjectiles();
 
     /* start in main menu — show cursor */
     game::setState(GameState::MAIN_MENU);
@@ -159,7 +159,7 @@ int main() {
             rs.minimapEnabled  = input::minimapEnabled;
 
             renderer::renderFrame(rs);
-            entity_renderer::renderEntities(rs);
+            entity_renderer::renderProjectiles(rs);
             minimap::renderMinimap(rs);
             hud::renderWeapon();
             menu_renderer::renderPauseMenu(pauseSelection);
@@ -182,16 +182,7 @@ int main() {
 
         input::processInput(window, deltaTime);
 
-        /* update entity spawning, AI, and combat */
-        entity::updateSpawner(deltaTime,
-                              player::player.posX, player::player.posY,
-                              0, 1, 3, 2);  /* ghost sprite layer indices */
-        for (auto& e : entity::entities) {
-            if (e.type == EntityType::GHOST)
-                entity::updateGhost(e, deltaTime,
-                                    player::player.posX, player::player.posY);
-        }
-        entity::updateCombat(deltaTime, player::player.posX, player::player.posY);
+        entity::updateProjectiles(deltaTime);
 
         renderer::RenderState rs;
         rs.posX   = player::player.posX;
@@ -207,7 +198,7 @@ int main() {
         rs.minimapEnabled  = input::minimapEnabled;
 
         renderer::renderFrame(rs);
-        entity_renderer::renderEntities(rs);
+        entity_renderer::renderProjectiles(rs);
         minimap::renderMinimap(rs);
         hud::renderWeapon();
 

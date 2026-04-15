@@ -63,11 +63,6 @@ void rotatePlayer(float angle) {
     player.planeY = oldPlaneX * s + player.planeY * c;
 }
 
-void startJump() {
-    if (player.posZ == 0.0f)        // only jump when grounded
-        player.velZ = JUMP_SPEED;
-}
-
 void updatePhysics(float deltaTime) {
     // Apply gravity
     player.velZ -= GRAVITY * deltaTime;

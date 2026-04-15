@@ -309,10 +309,6 @@ void renderMainMenuSelect(int selectedItem) {
     glDisable(GL_BLEND);
 }
 
-void renderMainMenu() {
-    renderMainMenuSelect(0);
-}
-
 void renderPauseMenu(int selectedItem) {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

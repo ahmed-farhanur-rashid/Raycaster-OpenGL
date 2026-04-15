@@ -20,7 +20,6 @@ static bool key4WasPressed = false;
 static bool rmbWasPressed  = false;
 static double lastMouseX = 0.0;
 static bool   mousePrimed = false;          // skip the first frame's garbage delta
-static bool   wasFiring = false;            // track fire state for combat
 
 void initMouse(GLFWwindow* window) {
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -119,7 +118,7 @@ void processInput(GLFWwindow* window, float deltaTime) {
     }
     rmbWasPressed = rmbNow;
 
-    /* detect weapon fire → spawn projectile or hitscan
+    /* detect weapon fire → spawn projectile
        Uses firedThisFrame() which is set by the weapon's auto-fire logic,
        so this works for single-shot AND auto-fire weapons.               */
     if (hud::firedThisFrame()) {
@@ -136,47 +135,34 @@ void processInput(GLFWwindow* window, float deltaTime) {
 
         switch (wt) {
         case WeaponType::ASSAULT_RIFLE: {
-            float dmg   = settings::getFloat("ar_damage", 10.0f);
             float range = settings::getFloat("ar_range",  20.0f);
-            entity::hitscanFire(px, py, dx, dy, dmg, range);
             entity::spawnProjectile(px + dx * oFwd + rx * oSide,
                                     py + dy * oFwd + ry * oSide,
-                                    dx, dy, 30.0f, 0.0f, ProjOwner::PLAYER, 0,
+                                    dx, dy, 30.0f, ProjOwner::PLAYER, 0,
                                     range, 0.06f, pz);
             break;
         }
         case WeaponType::SHOTGUN: {
-            float dmg   = settings::getFloat("sg_damage", 12.0f);
             float range = settings::getFloat("sg_range",  8.0f);
-            for (int i = -2; i <= 2; i++) {
-                float angle = (float)i * 0.06f;
-                float c = cosf(angle), s = sinf(angle);
-                float sdx = dx * c - dy * s;
-                float sdy = dx * s + dy * c;
-                entity::hitscanFire(px, py, sdx, sdy, dmg, range);
-            }
             entity::spawnProjectile(px + dx * oFwd + rx * oSide,
                                     py + dy * oFwd + ry * oSide,
-                                    dx, dy, 18.0f, 0.0f, ProjOwner::PLAYER, 2,
+                                    dx, dy, 18.0f, ProjOwner::PLAYER, 2,
                                     range, 0.18f, pz);
             break;
         }
         case WeaponType::ENERGY_WEAPON: {
-            float dmg   = settings::getFloat("en_damage", 20.0f);
             float range = settings::getFloat("en_range",  25.0f);
             entity::spawnProjectile(px + dx * oFwd + rx * oSide,
                                     py + dy * oFwd + ry * oSide,
-                                    dx, dy, 20.0f, dmg, ProjOwner::PLAYER, 1,
+                                    dx, dy, 20.0f, ProjOwner::PLAYER, 1,
                                     range, 0.10f, pz);
             break;
         }
         case WeaponType::HANDGUN: {
-            float dmg   = settings::getFloat("hg_damage", 15.0f);
             float range = settings::getFloat("hg_range",  18.0f);
-            entity::hitscanFire(px, py, dx, dy, dmg, range);
             entity::spawnProjectile(px + dx * oFwd + rx * oSide,
                                     py + dy * oFwd + ry * oSide,
-                                    dx, dy, 28.0f, 0.0f, ProjOwner::PLAYER, 0,
+                                    dx, dy, 28.0f, ProjOwner::PLAYER, 0,
                                     range, 0.07f, pz);
             break;
         }
@@ -198,20 +184,18 @@ void processInput(GLFWwindow* window, float deltaTime) {
 
         switch (wt) {
         case WeaponType::ASSAULT_RIFLE: {
-            float dmg   = settings::getFloat("ar_grenade_damage", 25.0f);
             float range = settings::getFloat("ar_grenade_range",  6.0f);
             entity::spawnProjectile(px + dx * oFwd + rx * oSide,
                                     py + dy * oFwd + ry * oSide,
-                                    dx, dy, 12.0f, dmg, ProjOwner::PLAYER, 2,
+                                    dx, dy, 12.0f, ProjOwner::PLAYER, 2,
                                     range, 0.22f, pz);
             break;
         }
         case WeaponType::ENERGY_WEAPON: {
-            float dmg   = settings::getFloat("en_damage", 20.0f);
             float range = settings::getFloat("en_range",  25.0f);
             entity::spawnProjectile(px + dx * oFwd + rx * oSide,
                                     py + dy * oFwd + ry * oSide,
-                                    dx, dy, 20.0f, dmg, ProjOwner::PLAYER, 1,
+                                    dx, dy, 20.0f, ProjOwner::PLAYER, 1,
                                     range, 0.10f, pz);
             break;
         }

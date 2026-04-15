@@ -7,24 +7,17 @@ namespace hud {
 
     void initHUD(int screenW, int screenH);
     void updateHUD(bool isMoving, float deltaTime, bool lmbHeld, bool rmbHeld);
-    void fireBullet();
     void fireGrenade();
     void reload();
-    bool hasWeaponEquipped();
     WeaponType currentWeapon();
-    void equipAssaultRifle();       // press 1
-    void equipShotgun();            // press 2
-    void equipEnergyWeapon();       // press 3
-    void equipHandgun();            // press 4
-    void renderWeapon();            // call after renderer::renderFrame()
+    void equipAssaultRifle();
+    void equipShotgun();
+    void equipEnergyWeapon();
+    void equipHandgun();
+    void renderWeapon();
     void cleanupHUD();
-
-    int getBullets();
-    int getMaxBullets();
-    int getGrenades();
-    int getMaxGrenades();
     bool firedThisFrame();
-    bool firedAltThisFrame();    /* did weapon fire a bullet this frame? */
+    bool firedAltThisFrame();
 }
 
 #endif

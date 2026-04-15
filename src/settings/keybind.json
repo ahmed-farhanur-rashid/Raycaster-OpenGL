@@ -13,6 +13,5 @@
     "equip_shotgun": "2",
     "equip_energy_weapon": "3",
     "equip_handgun": "4",
-    "reload": "R",
-    "quit": "ESCAPE"
+    "reload": "R"
 }

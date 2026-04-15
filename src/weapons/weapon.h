@@ -43,7 +43,6 @@ struct Weapon {
     /* behaviour */
     bool  autoFire         = false;
     float autoFireInterval = 0.07f;
-    bool  reloadAfterShot  = false;
 
     /* recoil */
     float recoilKick    = 0.04f;

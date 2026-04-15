@@ -4,8 +4,6 @@
 enum class GameState { MAIN_MENU, PLAYING, PAUSED };
 
 namespace game {
-    extern GameState state;
-
     void setState(GameState s);
     GameState getState();
 }

@@ -1,7 +1,6 @@
 #include <glad/glad.h>
 #include "hud_renderer.h"
 #include "shader.h"
-#include "../entity/entity.h"
 #include <cstdio>
 #include <cmath>
 
@@ -111,17 +110,10 @@ void equipShotgun()       { if (equipWeapon(1)) printf("Shotgun equipped.\n"); }
 void equipEnergyWeapon()  { if (equipWeapon(2)) printf("Energy Weapon equipped.\n"); }
 void equipHandgun()       { if (equipWeapon(3)) printf("Handgun equipped.\n"); }
 
-bool hasWeaponEquipped() { return active != nullptr; }
 WeaponType currentWeapon() { return active ? active->type : WeaponType::NONE; }
-
-int getBullets()     { return active ? active->ammo1 : 0; }
-int getMaxBullets()  { return active ? active->maxAmmo1 : 0; }
-int getGrenades()    { return (active && active->type == WeaponType::ASSAULT_RIFLE) ? active->ammo2 : 0; }
-int getMaxGrenades() { return (active && active->type == WeaponType::ASSAULT_RIFLE) ? active->maxAmmo2 : 0; }
 bool firedThisFrame() { return active && active->firedThisFrame; }
 bool firedAltThisFrame() { return active && active->firedAltThisFrame; }
 
-void fireBullet()  { if (active) weaponFirePrimary(*active); }
 void fireGrenade() { if (active) weaponFireSecondary(*active); }
 void reload()      { if (active) weaponReload(*active); }
 
@@ -264,33 +256,6 @@ void renderWeapon() {
 
     /* draw ammo bars */
     drawAmmoBars();
-
-    /* draw player health bar — top-centre */
-    {
-        float hpFill = (entity::playerMaxHp > 0.0f)
-                     ? entity::playerHp / entity::playerMaxHp : 0.0f;
-        if (hpFill < 0.0f) hpFill = 0.0f;
-        if (hpFill > 1.0f) hpFill = 1.0f;
-
-        auto px2x = [](float px) { return 2.0f * px / scrW - 1.0f; };
-        auto px2y = [](float py) { return 1.0f - 2.0f * py / scrH; };
-
-        float barW = 240.0f, barH = 16.0f;
-        float cx = (float)scrW / 2.0f;
-        float bxL = cx - barW / 2.0f;
-        float bxR = cx + barW / 2.0f;
-        float byTop = 12.0f;
-        float byBot = byTop + barH;
-
-        /* background */
-        drawRect(px2x(bxL), px2y(byBot), px2x(bxR), px2y(byTop),
-                 0.15f, 0.15f, 0.15f, 0.7f);
-        /* fill — green→red */
-        float hr = 1.0f - hpFill;
-        float hg = hpFill;
-        drawRect(px2x(bxL), px2y(byBot), px2x(bxL + barW * hpFill), px2y(byTop),
-                 hr, hg, 0.0f, 0.85f);
-    }
 
     glBindVertexArray(0);
     glDisable(GL_BLEND);

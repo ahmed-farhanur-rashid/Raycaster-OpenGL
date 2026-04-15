@@ -5,7 +5,7 @@
 
 namespace entity_renderer {
     void initEntityRenderer(int screenW, int screenH);
-    void renderEntities(const renderer::RenderState& state);
+    void renderProjectiles(const renderer::RenderState& state);
     void cleanupEntityRenderer();
 }
 

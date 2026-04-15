@@ -9,9 +9,6 @@ int mapWidth  = 0;
 int mapHeight = 0;
 int worldMap[MAX_MAP_DIMENSION][MAX_MAP_DIMENSION];
 
-MapSprite mapSprites[MAX_SPRITES];
-int numSprites = 0;
-
 bool loadMap(const char* path) {
     std::ifstream f(path);
     if (!f) {
@@ -38,8 +35,6 @@ bool loadMap(const char* path) {
     mapHeight = row;
 
     printf("Loaded map: %dx%d from %s\n", mapWidth, mapHeight, path);
-
-    numSprites = 0;
 
     return true;
 }
