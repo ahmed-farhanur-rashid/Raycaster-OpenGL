@@ -169,3 +169,7 @@ build/                          - Output directory
 | GLAD | — | OpenGL 3.3 core function loader |
 | STB | — | PNG image loading (`stb_image`) and writing (`stb_image_write`) |
 | MinGW64 | 15.2.0 | GCC-based compiler toolchain for Windows |
+
+<a href="https://www.vecteezy.com/free-vector/green">Green Vectors by Vecteezy</a>
+
+<a href="https://www.vecteezy.com/free-vector/stone">Stone Vectors by Vecteezy</a>
