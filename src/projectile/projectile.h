@@ -24,7 +24,7 @@ struct Projectile {
 };
 
 /* ================================================================== */
-/*  projectile namespace — global state                                */
+/*  projectile namespace — global state                               */
 /* ================================================================== */
 
 namespace projectile {
