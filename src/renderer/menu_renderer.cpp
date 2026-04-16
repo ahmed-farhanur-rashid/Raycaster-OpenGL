@@ -45,103 +45,132 @@ void main() {
 }
 )";
 
-/* ===== 5x7 bitmap font (ASCII 32-126) ===== */
+/*
+ * ===== Bitmap Font =====
+ *
+ * Each character is drawn on a tiny 5-wide x 7-tall pixel grid.
+ * Instead of loading a font file, we store each character as a small
+ * picture made of '#' (on) and '.' (off) pixels, written as a string.
+ *
+ * All 64 printable ASCII characters from ' ' (32) to '_' (95) are
+ * defined below.  Lowercase letters are mapped to uppercase when drawn.
+ *
+ * These character pictures are packed into one big image (a "texture
+ * atlas") arranged in a grid of 16 columns x 4 rows.  The GPU can then
+ * look up any character by its grid position.
+ */
 
-/* Each character is 5 pixels wide, 7 pixels tall.
-   Stored as 7 bytes per char, each byte's lower 5 bits = row pixels. */
-static const unsigned char font5x7[][7] = {
-    /* 32 ' ' */ {0x00,0x00,0x00,0x00,0x00,0x00,0x00},
-    /* 33 '!' */ {0x04,0x04,0x04,0x04,0x04,0x00,0x04},
-    /* 34 '"' */ {0x0A,0x0A,0x00,0x00,0x00,0x00,0x00},
-    /* 35 '#' */ {0x0A,0x1F,0x0A,0x0A,0x1F,0x0A,0x00},
-    /* 36 '$' */ {0x04,0x0F,0x14,0x0E,0x05,0x1E,0x04},
-    /* 37 '%' */ {0x18,0x19,0x02,0x04,0x08,0x13,0x03},
-    /* 38 '&' */ {0x08,0x14,0x14,0x08,0x15,0x12,0x0D},
-    /* 39 ''' */ {0x04,0x04,0x00,0x00,0x00,0x00,0x00},
-    /* 40 '(' */ {0x02,0x04,0x08,0x08,0x08,0x04,0x02},
-    /* 41 ')' */ {0x08,0x04,0x02,0x02,0x02,0x04,0x08},
-    /* 42 '*' */ {0x00,0x04,0x15,0x0E,0x15,0x04,0x00},
-    /* 43 '+' */ {0x00,0x04,0x04,0x1F,0x04,0x04,0x00},
-    /* 44 ',' */ {0x00,0x00,0x00,0x00,0x00,0x04,0x08},
-    /* 45 '-' */ {0x00,0x00,0x00,0x1F,0x00,0x00,0x00},
-    /* 46 '.' */ {0x00,0x00,0x00,0x00,0x00,0x00,0x04},
-    /* 47 '/' */ {0x00,0x01,0x02,0x04,0x08,0x10,0x00},
-    /* 48 '0' */ {0x0E,0x11,0x13,0x15,0x19,0x11,0x0E},
-    /* 49 '1' */ {0x04,0x0C,0x04,0x04,0x04,0x04,0x0E},
-    /* 50 '2' */ {0x0E,0x11,0x01,0x02,0x04,0x08,0x1F},
-    /* 51 '3' */ {0x0E,0x11,0x01,0x06,0x01,0x11,0x0E},
-    /* 52 '4' */ {0x02,0x06,0x0A,0x12,0x1F,0x02,0x02},
-    /* 53 '5' */ {0x1F,0x10,0x1E,0x01,0x01,0x11,0x0E},
-    /* 54 '6' */ {0x06,0x08,0x10,0x1E,0x11,0x11,0x0E},
-    /* 55 '7' */ {0x1F,0x01,0x02,0x04,0x08,0x08,0x08},
-    /* 56 '8' */ {0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E},
-    /* 57 '9' */ {0x0E,0x11,0x11,0x0F,0x01,0x02,0x0C},
-    /* 58 ':' */ {0x00,0x00,0x04,0x00,0x00,0x04,0x00},
-    /* 59 ';' */ {0x00,0x00,0x04,0x00,0x00,0x04,0x08},
-    /* 60 '<' */ {0x01,0x02,0x04,0x08,0x04,0x02,0x01},
-    /* 61 '=' */ {0x00,0x00,0x1F,0x00,0x1F,0x00,0x00},
-    /* 62 '>' */ {0x10,0x08,0x04,0x02,0x04,0x08,0x10},
-    /* 63 '?' */ {0x0E,0x11,0x01,0x02,0x04,0x00,0x04},
-    /* 64 '@' */ {0x0E,0x11,0x17,0x15,0x17,0x10,0x0E},
-    /* 65 'A' */ {0x0E,0x11,0x11,0x1F,0x11,0x11,0x11},
-    /* 66 'B' */ {0x1E,0x11,0x11,0x1E,0x11,0x11,0x1E},
-    /* 67 'C' */ {0x0E,0x11,0x10,0x10,0x10,0x11,0x0E},
-    /* 68 'D' */ {0x1E,0x11,0x11,0x11,0x11,0x11,0x1E},
-    /* 69 'E' */ {0x1F,0x10,0x10,0x1E,0x10,0x10,0x1F},
-    /* 70 'F' */ {0x1F,0x10,0x10,0x1E,0x10,0x10,0x10},
-    /* 71 'G' */ {0x0E,0x11,0x10,0x17,0x11,0x11,0x0E},
-    /* 72 'H' */ {0x11,0x11,0x11,0x1F,0x11,0x11,0x11},
-    /* 73 'I' */ {0x0E,0x04,0x04,0x04,0x04,0x04,0x0E},
-    /* 74 'J' */ {0x07,0x02,0x02,0x02,0x02,0x12,0x0C},
-    /* 75 'K' */ {0x11,0x12,0x14,0x18,0x14,0x12,0x11},
-    /* 76 'L' */ {0x10,0x10,0x10,0x10,0x10,0x10,0x1F},
-    /* 77 'M' */ {0x11,0x1B,0x15,0x15,0x11,0x11,0x11},
-    /* 78 'N' */ {0x11,0x11,0x19,0x15,0x13,0x11,0x11},
-    /* 79 'O' */ {0x0E,0x11,0x11,0x11,0x11,0x11,0x0E},
-    /* 80 'P' */ {0x1E,0x11,0x11,0x1E,0x10,0x10,0x10},
-    /* 81 'Q' */ {0x0E,0x11,0x11,0x11,0x15,0x12,0x0D},
-    /* 82 'R' */ {0x1E,0x11,0x11,0x1E,0x14,0x12,0x11},
-    /* 83 'S' */ {0x0E,0x11,0x10,0x0E,0x01,0x11,0x0E},
-    /* 84 'T' */ {0x1F,0x04,0x04,0x04,0x04,0x04,0x04},
-    /* 85 'U' */ {0x11,0x11,0x11,0x11,0x11,0x11,0x0E},
-    /* 86 'V' */ {0x11,0x11,0x11,0x11,0x0A,0x0A,0x04},
-    /* 87 'W' */ {0x11,0x11,0x11,0x15,0x15,0x1B,0x11},
-    /* 88 'X' */ {0x11,0x11,0x0A,0x04,0x0A,0x11,0x11},
-    /* 89 'Y' */ {0x11,0x11,0x0A,0x04,0x04,0x04,0x04},
-    /* 90 'Z' */ {0x1F,0x01,0x02,0x04,0x08,0x10,0x1F},
-    /* 91 '[' */ {0x0E,0x08,0x08,0x08,0x08,0x08,0x0E},
-    /* 92 '\' */ {0x00,0x10,0x08,0x04,0x02,0x01,0x00},
-    /* 93 ']' */ {0x0E,0x02,0x02,0x02,0x02,0x02,0x0E},
-    /* 94 '^' */ {0x04,0x0A,0x11,0x00,0x00,0x00,0x00},
-    /* 95 '_' */ {0x00,0x00,0x00,0x00,0x00,0x00,0x1F},
+static const int GLYPH_W     = 5;
+static const int GLYPH_H     = 7;
+static const int GLYPH_COUNT = 64;   /* ASCII 32 (' ') through 95 ('_') */
+static const int ATLAS_COLS  = 16;
+static const int ATLAS_ROWS  = 4;
+static const int ATLAS_PX_W  = ATLAS_COLS * GLYPH_W;   /* 80 */
+static const int ATLAS_PX_H  = ATLAS_ROWS * GLYPH_H;   /* 28 */
+
+/*
+ * Each string is one row of a character (5 chars long).
+ * '#' = pixel on, '.' = pixel off.
+ *
+ * Example – the letter 'A':
+ *   ".###."      top row
+ *   "#...#"
+ *   "#...#"
+ *   "#####"      middle bar
+ *   "#...#"
+ *   "#...#"
+ *   "#...#"      bottom row
+ */
+static const char* glyphBitmaps[GLYPH_COUNT][GLYPH_H] = {
+    /* 32 ' ' */ {".....", ".....", ".....", ".....", ".....", ".....", "....."},
+    /* 33 '!' */ {"..#..", "..#..", "..#..", "..#..", "..#..", ".....", "..#.."},
+    /* 34 '"' */ {".#.#.", ".#.#.", ".....", ".....", ".....", ".....", "....."},
+    /* 35 '#' */ {".#.#.", "#####", ".#.#.", ".#.#.", "#####", ".#.#.", "....."},
+    /* 36 '$' */ {"..#..", "####.", "#.#..", ".###.", "..#.#", ".####", "..#.."},
+    /* 37 '%' */ {"##...", "##..#", "...#.", "..#..", ".#...", "#.##.", "...##"},
+    /* 38 '&' */ {".#...", "#.#..", "#.#..", ".#...", "#.#.#", "#..#.", ".##.#"},
+    /* 39 ''' */ {"..#..", "..#..", ".....", ".....", ".....", ".....", "....."},
+    /* 40 '(' */ {"..#..", ".#...", "#....", "#....", "#....", ".#...", "..#.."},
+    /* 41 ')' */ {".#...", "..#..", "...#.", "...#.", "...#.", "..#..", ".#..."},
+    /* 42 '*' */ {".....", "..#..", "#.#.#", ".###.", "#.#.#", "..#..", "....."},
+    /* 43 '+' */ {".....", "..#..", "..#..", "#####", "..#..", "..#..", "....."},
+    /* 44 ',' */ {".....", ".....", ".....", ".....", ".....", "..#..", ".#..."},
+    /* 45 '-' */ {".....", ".....", ".....", "#####", ".....", ".....", "....."},
+    /* 46 '.' */ {".....", ".....", ".....", ".....", ".....", ".....", "..#.."},
+    /* 47 '/' */ {".....", "....#", "...#.", "..#..", ".#...", "#....", "....."},
+    /* 48 '0' */ {".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."},
+    /* 49 '1' */ {"..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."},
+    /* 50 '2' */ {".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"},
+    /* 51 '3' */ {".###.", "#...#", "....#", "..##.", "....#", "#...#", ".###."},
+    /* 52 '4' */ {"...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."},
+    /* 53 '5' */ {"#####", "#....", "####.", "....#", "....#", "#...#", ".###."},
+    /* 54 '6' */ {".##..", ".#...", "#....", "####.", "#...#", "#...#", ".###."},
+    /* 55 '7' */ {"#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."},
+    /* 56 '8' */ {".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."},
+    /* 57 '9' */ {".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##.."},
+    /* 58 ':' */ {".....", ".....", "..#..", ".....", ".....", "..#..", "....."},
+    /* 59 ';' */ {".....", ".....", "..#..", ".....", ".....", "..#..", ".#..."},
+    /* 60 '<' */ {"....#", "...#.", "..#..", ".#...", "..#..", "...#.", "....#"},
+    /* 61 '=' */ {".....", ".....", "#####", ".....", "#####", ".....", "....."},
+    /* 62 '>' */ {"#....", ".#...", "..#..", "...#.", "..#..", ".#...", "#...."},
+    /* 63 '?' */ {".###.", "#...#", "....#", "...#.", "..#..", ".....", "..#.."},
+    /* 64 '@' */ {".###.", "#...#", "#.###", "#.#.#", "#.###", "#....", ".###."},
+    /* 65 'A' */ {".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"},
+    /* 66 'B' */ {"####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."},
+    /* 67 'C' */ {".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."},
+    /* 68 'D' */ {"####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####."},
+    /* 69 'E' */ {"#####", "#....", "#....", "####.", "#....", "#....", "#####"},
+    /* 70 'F' */ {"#####", "#....", "#....", "####.", "#....", "#....", "#...."},
+    /* 71 'G' */ {".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".###."},
+    /* 72 'H' */ {"#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"},
+    /* 73 'I' */ {".###.", "..#..", "..#..", "..#..", "..#..", "..#..", ".###."},
+    /* 74 'J' */ {".####", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.."},
+    /* 75 'K' */ {"#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"},
+    /* 76 'L' */ {"#....", "#....", "#....", "#....", "#....", "#....", "#####"},
+    /* 77 'M' */ {"#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#"},
+    /* 78 'N' */ {"#...#", "#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#"},
+    /* 79 'O' */ {".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."},
+    /* 80 'P' */ {"####.", "#...#", "#...#", "####.", "#....", "#....", "#...."},
+    /* 81 'Q' */ {".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#"},
+    /* 82 'R' */ {"####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"},
+    /* 83 'S' */ {".###.", "#...#", "#....", ".###.", "....#", "#...#", ".###."},
+    /* 84 'T' */ {"#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."},
+    /* 85 'U' */ {"#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."},
+    /* 86 'V' */ {"#...#", "#...#", "#...#", "#...#", ".#.#.", ".#.#.", "..#.."},
+    /* 87 'W' */ {"#...#", "#...#", "#...#", "#.#.#", "#.#.#", "##.##", "#...#"},
+    /* 88 'X' */ {"#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#"},
+    /* 89 'Y' */ {"#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.."},
+    /* 90 'Z' */ {"#####", "....#", "...#.", "..#..", ".#...", "#....", "#####"},
+    /* 91 '[' */ {".###.", ".#...", ".#...", ".#...", ".#...", ".#...", ".###."},
+    /* 92 '\' */ {".....", "#....", ".#...", "..#..", "...#.", "....#", "....."},
+    /* 93 ']' */ {".###.", "...#.", "...#.", "...#.", "...#.", "...#.", ".###."},
+    /* 94 '^' */ {"..#..", ".#.#.", "#...#", ".....", ".....", ".....", "....."},
+    /* 95 '_' */ {".....", ".....", ".....", ".....", ".....", ".....", "#####"},
 };
 
-/* only 64 entries above (32-95). For lowercase, map to uppercase. */
-#define FONT_CHARS 96
-#define FONT_W 5
-#define FONT_H 7
-#define ATLAS_COLS 16
-#define ATLAS_ROWS 6
-#define ATLAS_PX_W (ATLAS_COLS * FONT_W)
-#define ATLAS_PX_H (ATLAS_ROWS * FONT_H)
-
+/*
+ * buildFontAtlas() — Converts the readable '#'/'.'' bitmaps above into a
+ * GPU texture.  Each character occupies a 5x7 cell in the atlas image.
+ */
 static unsigned int buildFontAtlas() {
     unsigned char atlas[ATLAS_PX_H][ATLAS_PX_W][4];
     memset(atlas, 0, sizeof(atlas));
 
-    for (int c = 0; c < FONT_CHARS && c < 64; c++) {
-        int col = c % ATLAS_COLS;
-        int row = c / ATLAS_COLS;
-        for (int y = 0; y < FONT_H; y++) {
-            unsigned char bits = font5x7[c][y];
-            for (int x = 0; x < FONT_W; x++) {
-                int px = col * FONT_W + (FONT_W - 1 - x);
-                int py = row * FONT_H + y;
-                bool on = (bits >> x) & 1;
-                atlas[py][px][0] = 255;
-                atlas[py][px][1] = 255;
-                atlas[py][px][2] = 255;
-                atlas[py][px][3] = on ? 255 : 0;
+    for (int charIndex = 0; charIndex < GLYPH_COUNT; charIndex++) {
+        int gridCol = charIndex % ATLAS_COLS;
+        int gridRow = charIndex / ATLAS_COLS;
+
+        for (int row = 0; row < GLYPH_H; row++) {
+            const char* rowPixels = glyphBitmaps[charIndex][row];
+            for (int col = 0; col < GLYPH_W; col++) {
+                int atlasX = gridCol * GLYPH_W + col;
+                int atlasY = gridRow * GLYPH_H + row;
+                bool pixelOn = (rowPixels[col] == '#');
+
+                atlas[atlasY][atlasX][0] = 255;   /* red   */
+                atlas[atlasY][atlasX][1] = 255;   /* green */
+                atlas[atlasY][atlasX][2] = 255;   /* blue  */
+                atlas[atlasY][atlasX][3] = pixelOn ? 255 : 0; /* alpha */
             }
         }
     }
@@ -158,6 +187,10 @@ static unsigned int buildFontAtlas() {
 
 /* ===== drawing helpers ===== */
 
+/* Convert pixel coordinates to normalised device coordinates (-1..1) */
+static float px2x(float px) { return 2.0f * px / scrW - 1.0f; }
+static float px2y(float py) { return 1.0f - 2.0f * py / scrH; }
+
 static void drawRect(float x0, float y0, float x1, float y1,
                      float r, float g, float b, float a) {
     glUniform1i(uUseSolid, 1);
@@ -172,66 +205,112 @@ static void drawRect(float x0, float y0, float x1, float y1,
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
-/* draw a string at pixel coords (cx = centre X, py = top Y), scale = pixel height per glyph */
-static void drawText(const char* text, float cx, float py, float scale,
+/* Draw a string centred at pixel X = centreX, top at pixel Y = topY.
+   height = pixel height of each character. */
+static void drawText(const char* text, float centreX, float topY, float height,
                      float r, float g, float b) {
     glUniform1i(uUseSolid, 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fontTex);
 
     int len = (int)strlen(text);
-    float glyphW = scale * ((float)FONT_W / FONT_H);
-    float totalW = glyphW * len;
-    float startX = cx - totalW / 2.0f;
-
-    /* tint via solidColor alpha trick — actually we just draw white glyphs.
-       For coloured text, re-use solid overlay: draw glyph as white, then
-       we just accept white for now. Let's modify the shader to tint. */
-    /* Actually, let's just use the solid uniform as a tint multiplier.
-       We'll draw with useSolidColor=0 (textured), so we get white glyphs.
-       Good enough for a menu. For coloured text, we'd need a tint uniform,
-       but let's keep it simple — selected items get a highlight rect behind them. */
+    float charW = height * ((float)GLYPH_W / GLYPH_H);
+    float totalW = charW * len;
+    float startX = centreX - totalW / 2.0f;
 
     for (int i = 0; i < len; i++) {
-        int ch = (unsigned char)text[i] - 32;
-        if (ch < 0 || ch >= 64) ch = 0;  /* space for unknown */
+        /* Map ASCII to our glyph table (0-63). Unknown chars become space. */
+        int glyphIndex = (unsigned char)text[i] - 32;
+        if (glyphIndex < 0 || glyphIndex >= GLYPH_COUNT) glyphIndex = 0;
 
-        int col = ch % ATLAS_COLS;
-        int row = ch / ATLAS_COLS;
+        /* Find this glyph's position in the atlas grid */
+        int atlasCol = glyphIndex % ATLAS_COLS;
+        int atlasRow = glyphIndex / ATLAS_COLS;
 
-        float u0 = (float)(col * FONT_W) / ATLAS_PX_W;
-        float u1 = (float)(col * FONT_W + FONT_W) / ATLAS_PX_W;
-        float v0 = (float)(row * FONT_H) / ATLAS_PX_H;
-        float v1 = (float)(row * FONT_H + FONT_H) / ATLAS_PX_H;
+        /* UV coordinates: where this glyph sits in the atlas texture (0..1) */
+        float u0 = (float)(atlasCol * GLYPH_W) / ATLAS_PX_W;
+        float u1 = (float)(atlasCol * GLYPH_W + GLYPH_W) / ATLAS_PX_W;
+        float v0 = (float)(atlasRow * GLYPH_H) / ATLAS_PX_H;
+        float v1 = (float)(atlasRow * GLYPH_H + GLYPH_H) / ATLAS_PX_H;
 
-        float px0 = startX + i * glyphW;
-        float px1 = px0 + glyphW;
-        float py0 = py;
-        float py1 = py + scale;
+        /* Screen position in pixels */
+        float left   = startX + i * charW;
+        float right  = left + charW;
+        float top    = topY;
+        float bottom = topY + height;
 
-        /* pixel to NDC */
-        float nx0 = 2.0f * px0 / scrW - 1.0f;
-        float nx1 = 2.0f * px1 / scrW - 1.0f;
-        float ny0 = 1.0f - 2.0f * py0 / scrH;
-        float ny1 = 1.0f - 2.0f * py1 / scrH;
+        /* Convert pixels to normalised device coordinates (-1..1) */
+        float ndcL = px2x(left);
+        float ndcR = px2x(right);
+        float ndcT = px2y(top);
+        float ndcB = px2y(bottom);
 
         float verts[] = {
-            nx0, ny1, u0, v1,
-            nx1, ny1, u1, v1,
-            nx0, ny0, u0, v0,
-            nx1, ny0, u1, v0,
+            ndcL, ndcB, u0, v1,
+            ndcR, ndcB, u1, v1,
+            ndcL, ndcT, u0, v0,
+            ndcR, ndcT, u1, v0,
         };
         glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
-
-        /* tint — use solid color overlay at low alpha for coloring */
-        glUniform1i(uUseSolid, 0);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     }
 }
 
-/* pixel helpers */
-static float px2x(float px) { return 2.0f * px / scrW - 1.0f; }
-static float px2y(float py) { return 1.0f - 2.0f * py / scrH; }
+/* ===== shared menu renderer ===== */
+
+struct MenuConfig {
+    const char*  title;
+    float        titleY;       /* fraction of screen height (0.0 – 1.0) */
+    float        titleSize;    /* pixel height of title text */
+    const char** items;
+    int          itemCount;
+    float        itemH;        /* pixel height of each menu item */
+    float        gap;          /* pixel gap between items */
+    float        startY;       /* fraction of screen height where items begin */
+    const char*  hint;         /* help text at the bottom */
+    float bgR, bgG, bgB, bgA; /* fullscreen overlay colour */
+};
+
+static void renderMenu(const MenuConfig& cfg, int selectedItem) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glUseProgram(menuProg);
+    glBindVertexArray(menuVao);
+    glBindBuffer(GL_ARRAY_BUFFER, menuVbo);
+
+    /* fullscreen overlay */
+    drawRect(-1, -1, 1, 1, cfg.bgR, cfg.bgG, cfg.bgB, cfg.bgA);
+
+    /* title */
+    drawText(cfg.title, (float)scrW / 2.0f, scrH * cfg.titleY,
+             cfg.titleSize, 1, 1, 1);
+
+    /* menu items */
+    float baseY = scrH * cfg.startY;
+    for (int i = 0; i < cfg.itemCount; i++) {
+        float iy = baseY + i * (cfg.itemH + cfg.gap);
+
+        /* highlight rectangle behind the selected item */
+        if (i == selectedItem) {
+            float charW  = cfg.itemH * ((float)GLYPH_W / GLYPH_H);
+            float totalW = charW * (int)strlen(cfg.items[i]);
+            float bx0 = (float)scrW / 2.0f - totalW / 2.0f - 10.0f;
+            float bx1 = (float)scrW / 2.0f + totalW / 2.0f + 10.0f;
+            drawRect(px2x(bx0), px2y(iy + cfg.itemH + 4.0f),
+                     px2x(bx1), px2y(iy - 4.0f),
+                     0.3f, 0.3f, 0.6f, 0.7f);
+        }
+
+        drawText(cfg.items[i], (float)scrW / 2.0f, iy, cfg.itemH, 1, 1, 1);
+    }
+
+    /* hint text */
+    drawText(cfg.hint, (float)scrW / 2.0f, (float)scrH * 0.85f,
+             14.0f, 0.5f, 0.5f, 0.5f);
+
+    glBindVertexArray(0);
+    glDisable(GL_BLEND);
+}
 
 /* ===== public API ===== */
 
@@ -264,93 +343,25 @@ void initMenu(int screenW, int screenH) {
 }
 
 void renderMainMenuSelect(int selectedItem) {
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glUseProgram(menuProg);
-    glBindVertexArray(menuVao);
-    glBindBuffer(GL_ARRAY_BUFFER, menuVbo);
-
-    /* dark fullscreen overlay */
-    drawRect(-1, -1, 1, 1, 0.05f, 0.05f, 0.08f, 1.0f);
-
-    /* title */
-    float titleY = (float)scrH * 0.18f;
-    drawText("RAYCASTER", (float)scrW / 2.0f, titleY, 48.0f, 1, 1, 1);
-
-    /* menu items */
     const char* items[] = { "START", "QUIT" };
-    int count = 2;
-    float itemH = 32.0f;
-    float gap = 20.0f;
-    float startY = (float)scrH * 0.45f;
-
-    for (int i = 0; i < count; i++) {
-        float iy = startY + i * (itemH + gap);
-
-        /* highlight selected */
-        if (i == selectedItem) {
-            int len = (int)strlen(items[i]);
-            float glyphW = itemH * ((float)FONT_W / FONT_H);
-            float totalW = glyphW * len;
-            float bx0 = (float)scrW / 2.0f - totalW / 2.0f - 10.0f;
-            float bx1 = (float)scrW / 2.0f + totalW / 2.0f + 10.0f;
-            drawRect(px2x(bx0), px2y(iy + itemH + 4.0f), px2x(bx1), px2y(iy - 4.0f),
-                     0.3f, 0.3f, 0.6f, 0.7f);
-        }
-
-        drawText(items[i], (float)scrW / 2.0f, iy, itemH, 1, 1, 1);
-    }
-
-    /* hint */
-    drawText("UP/DOWN TO SELECT  ENTER TO CONFIRM  ESC TO QUIT",
-             (float)scrW / 2.0f, (float)scrH * 0.85f, 14.0f, 0.5f, 0.5f, 0.5f);
-
-    glBindVertexArray(0);
-    glDisable(GL_BLEND);
+    MenuConfig cfg = {
+        "RAYCASTER", 0.18f, 48.0f,
+        items, 2, 32.0f, 20.0f, 0.45f,
+        "UP/DOWN TO SELECT  ENTER TO CONFIRM  ESC TO QUIT",
+        0.05f, 0.05f, 0.08f, 1.0f
+    };
+    renderMenu(cfg, selectedItem);
 }
 
 void renderPauseMenu(int selectedItem) {
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glUseProgram(menuProg);
-    glBindVertexArray(menuVao);
-    glBindBuffer(GL_ARRAY_BUFFER, menuVbo);
-
-    /* semi-transparent overlay */
-    drawRect(-1, -1, 1, 1, 0.0f, 0.0f, 0.0f, 0.6f);
-
-    /* title */
-    float titleY = (float)scrH * 0.25f;
-    drawText("PAUSED", (float)scrW / 2.0f, titleY, 40.0f, 1, 1, 1);
-
-    /* menu items */
     const char* items[] = { "CONTINUE", "MAIN MENU", "QUIT" };
-    int count = 3;
-    float itemH = 28.0f;
-    float gap = 18.0f;
-    float startY = (float)scrH * 0.45f;
-
-    for (int i = 0; i < count; i++) {
-        float iy = startY + i * (itemH + gap);
-
-        if (i == selectedItem) {
-            int len = (int)strlen(items[i]);
-            float glyphW = itemH * ((float)FONT_W / FONT_H);
-            float totalW = glyphW * len;
-            float bx0 = (float)scrW / 2.0f - totalW / 2.0f - 10.0f;
-            float bx1 = (float)scrW / 2.0f + totalW / 2.0f + 10.0f;
-            drawRect(px2x(bx0), px2y(iy + itemH + 4.0f), px2x(bx1), px2y(iy - 4.0f),
-                     0.3f, 0.3f, 0.6f, 0.7f);
-        }
-
-        drawText(items[i], (float)scrW / 2.0f, iy, itemH, 1, 1, 1);
-    }
-
-    drawText("UP/DOWN TO SELECT  ENTER TO CONFIRM",
-             (float)scrW / 2.0f, (float)scrH * 0.85f, 14.0f, 0.5f, 0.5f, 0.5f);
-
-    glBindVertexArray(0);
-    glDisable(GL_BLEND);
+    MenuConfig cfg = {
+        "PAUSED", 0.25f, 40.0f,
+        items, 3, 28.0f, 18.0f, 0.45f,
+        "UP/DOWN TO SELECT  ENTER TO CONFIRM",
+        0.0f, 0.0f, 0.0f, 0.6f
+    };
+    renderMenu(cfg, selectedItem);
 }
 
 void cleanupMenu() {
