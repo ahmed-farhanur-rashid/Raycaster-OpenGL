@@ -1,33 +1,33 @@
 #include "player.h"
 #include "../map/map.h"
+#include "../settings/settings.h"
 #include <cmath>
-#include <cstdio>
 
 namespace player {
 
 PlayerState player;
+float GRAVITY    = 14.0f;
+float JUMP_SPEED = 5.0f;
 
 void initPlayer() {
-    player.posX = 1.5f;
-    player.posY = 1.5f;
+    GRAVITY    = settings::getFloat("gravity",    14.0f);
+    JUMP_SPEED = settings::getFloat("jump_speed", 5.0f);
+
+    player.posX = settings::getFloat("player_spawn_x", 1.5f);
+    player.posY = settings::getFloat("player_spawn_y", 1.5f);
     player.dirX = 1.0f;
     player.dirY = 0.0f;
     player.planeX = 0.0f;
-    player.planeY = 0.66f;
-    player.moveSpeed = 3.0f;
-    player.rotSpeed = 2.5f;
-    player.posZ = 0.0f;   // <-- ADD
-    player.velZ = 0.0f;   // <-- ADD
-    player.health    = 100;
-    player.maxHealth = 100;
-    player.ammo      = 30;
-    player.maxAmmo   = 30;
-    player.damageFlash = 0.0f;
-    player.healFlash   = 0.0f;
+    player.planeY = settings::getFloat("player_fov", 0.666f);
+    player.moveSpeed  = settings::getFloat("move_speed",     3.0f);
+    player.sprintSpeed = settings::getFloat("sprint_speed",  4.5f);
+    player.rotSpeed   = settings::getFloat("rotation_speed", 2.5f);
+    player.posZ = 0.0f;
+    player.velZ = 0.0f;
 }
 
-void movePlayer(float forward, float strafe, float deltaTime) {
-    float speed = player.moveSpeed * deltaTime;
+void movePlayer(float forward, float strafe, float deltaTime, bool sprinting) {
+    float speed = (sprinting ? player.sprintSpeed : player.moveSpeed) * deltaTime;
     float rightX = -player.dirY;
     float rightY = player.dirX;
     float moveX = player.dirX * forward + rightX * strafe;
@@ -36,7 +36,7 @@ void movePlayer(float forward, float strafe, float deltaTime) {
     float newX = player.posX + moveX * speed;
     float newY = player.posY + moveY * speed;
 
-    float margin = 0.2f;
+    float margin = settings::getFloat("collision_margin", 0.2f);
 
     int checkX = (int)(newX + (moveX > 0 ? margin : -margin));
     if (checkX >= 0 && checkX < map::mapWidth && map::worldMap[(int)player.posY][checkX] == 0)
@@ -80,61 +80,6 @@ void updatePhysics(float deltaTime) {
 void jump() {
     if (player.posZ == 0.0f)        // only jump when grounded
         player.velZ = JUMP_SPEED;
-}
-
-void takeDamage(int amount) {
-    player.health -= amount;
-    if (player.health < 0) player.health = 0;
-    player.damageFlash = 1.0f;   // full intensity, will decay over time
-}
-
-bool isDead() {
-    return player.health <= 0;
-}
-
-void checkPickups(float deltaTime) {
-    // Check collision with map sprites (pickups)
-    for (int i = 0; i < map::numSprites; i++) {
-        if (map::mapSprites[i].type == -1) continue;  // Already picked up
-        
-        float dx = map::mapSprites[i].x - player.posX;
-        float dy = map::mapSprites[i].y - player.posY;
-        float dist = sqrtf(dx*dx + dy*dy);
-        
-        if (dist < 0.5f) {  // Pickup radius
-            // Type 5 = health, Type 6 = ammo
-            if (map::mapSprites[i].type == 5) {  // Health pickup
-                if (player.health < player.maxHealth) {
-                    int oldHealth = player.health;
-                    player.health += 25;
-                    if (player.health > player.maxHealth) player.health = player.maxHealth;
-                    printf("Picked up health! Health: %d\n", player.health);
-                    map::mapSprites[i].type = -1;  // Mark as collected
-                    
-                    // Trigger heal flash if health was actually restored
-                    if (player.health > oldHealth) {
-                        player.healFlash = 1.0f;
-                    }
-                }
-            } else if (map::mapSprites[i].type == 6) {  // Ammo pickup
-                if (player.ammo < player.maxAmmo) {
-                    player.ammo += 15;
-                    if (player.ammo > player.maxAmmo) player.ammo = player.maxAmmo;
-                    printf("Picked up ammo! Ammo: %d\n", player.ammo);
-                    map::mapSprites[i].type = -1;  // Mark as collected
-                }
-            }
-        }
-    }
-}
-
-void updateEffects(float deltaTime) {
-    const float FLASH_DECAY = 2.5f;   // full flash fades in ~0.4 seconds
-    player.damageFlash -= FLASH_DECAY * deltaTime;
-    if (player.damageFlash < 0.0f) player.damageFlash = 0.0f;
-
-    player.healFlash -= FLASH_DECAY * deltaTime;
-    if (player.healFlash < 0.0f) player.healFlash = 0.0f;
 }
 
 } // namespace player

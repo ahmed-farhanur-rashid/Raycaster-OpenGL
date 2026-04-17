@@ -1,0 +1,17 @@
+{
+    "move_forward": "W",
+    "move_backward": "S",
+    "strafe_left": "A",
+    "strafe_right": "D",
+    "sprint": "LEFT_SHIFT",
+    "jump": "SPACE",
+    "rotate_left": "LEFT",
+    "rotate_right": "RIGHT",
+    "toggle_minimap": "M",
+    "toggle_lighting": "L",
+    "equip_assault_rifle": "1",
+    "equip_shotgun": "2",
+    "equip_energy_weapon": "3",
+    "equip_handgun": "4",
+    "reload": "R"
+}

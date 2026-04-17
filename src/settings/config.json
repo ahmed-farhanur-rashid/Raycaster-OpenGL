@@ -1,0 +1,101 @@
+{
+    // Display
+    "screen_width": 960,
+    "screen_height": 720,
+    "max_delta_time": 0.05,
+
+    // Player movement and physics
+    "gravity": 14.0,
+    "jump_speed": 5.0,
+    "move_speed": 3.0,
+    "sprint_speed": 4.5,
+    "rotation_speed": 2.5,
+    "mouse_sensitivity": 0.002,
+    "player_spawn_x": 1.5,
+    "player_spawn_y": 1.5,
+    "player_fov": 0.666,
+    "collision_margin": 0.2,
+
+    // Assault rifle — timing, ammo, recoil, projectile
+    "assault_rifle_range": 20.0,
+    "assault_rifle_grenade_range": 6.0,
+    "assault_rifle_max_bullets": 30,
+    "assault_rifle_max_grenades": 5,
+    "assault_rifle_fire_duration": 0.12,
+    "assault_rifle_grenade_duration": 0.25,
+    "assault_rifle_reload_duration": 0.11,
+    "assault_rifle_auto_fire_interval": 0.05,
+    "assault_rifle_recoil": 0.04,
+    "assault_rifle_grenade_recoil": 0.06,
+    "assault_rifle_projectile_speed": 30.0,
+    "assault_rifle_projectile_scale": 0.06,
+    "assault_rifle_grenade_speed": 12.0,
+    "assault_rifle_grenade_scale": 0.22,
+
+    // Handgun — timing, recoil, projectile
+    "handgun_fire_duration": 0.15,
+    "handgun_range": 18.0,
+    "handgun_recoil": 0.04,
+    "handgun_projectile_speed": 28.0,
+    "handgun_projectile_scale": 0.07,
+
+    // Shotgun — timing, recoil, projectile
+    "shotgun_fire_duration": 0.15,
+    "shotgun_reload_duration": 0.10,
+    "shotgun_range": 8.0,
+    "shotgun_recoil": 0.07,
+    "shotgun_projectile_speed": 18.0,
+    "shotgun_projectile_scale": 0.18,
+
+    // Energy weapon — drain, recoil, projectile
+    "energy_drain_normal": 3.0,
+    "energy_drain_overcharge": 1.5,
+    "energy_recharge_rate": 0.15,
+    "energy_overheat_duration": 0.4,
+    "energy_fire_duration": 0.12,
+    "energy_range": 15.0,
+    "energy_fire_interval": 0.0001,
+    "energy_recoil": 0.04,
+    "energy_overcharge_recoil": 0.06,
+    "energy_projectile_speed": 20.0,
+    "energy_projectile_scale": 0.10,
+
+    // Projectile spawning offsets and lifetime
+    "projectile_offset_forward": 0.2,
+    "projectile_offset_side": 0.075,
+    "projectile_offset_down": 0.13,
+    "projectile_lifetime": 5.0,
+
+    // HUD weapon bob animation
+    "hud_bob_speed": 7.0,
+    "hud_bob_vertical": 0.015,
+    "hud_bob_horizontal": 0.012,
+    "hud_bob_decay": 0.9,
+
+    // HUD weapon sprite position (NDC)
+    "hud_weapon_center_x": 0.3,
+    "hud_weapon_half_width": 0.8,
+    "hud_weapon_bottom": -1.0,
+    "hud_weapon_top": 0.2,
+
+    // Minimap overlay
+    "minimap_size": 160,
+    "minimap_margin": 10.0,
+
+    // Rendering — fog and wall shading
+    "fog_density": 0.04,
+    "wall_side_darkening": 0.5,
+
+    // Circular sprite (midpoint circle algorithm target)
+    "sprite_circle_tex_size": 32,
+    "sprite_circle_radius": 14,
+    "sprite_circle_hit_radius": 0.5,
+    "sprite_circle_visual_scale": 0.4,
+    "sprite_circle_fill_r": 220,
+    "sprite_circle_fill_g": 50,
+    "sprite_circle_fill_b": 50,
+    "sprite_circle_outline_r": 255,
+    "sprite_circle_outline_g": 255,
+    "sprite_circle_outline_b": 255,
+    "sprite_circle_outline_width": 2
+}
