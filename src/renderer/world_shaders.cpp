@@ -121,7 +121,7 @@ vec3 renderWall(vec2 rd, int side, float perpDist, int wallType, float py, float
     float texV = clamp(float(iy - drawStart) / float(max(lineH, 1)), 0.0, 1.0);
 
     int texIdx = wallType - 1;
-    if (texIdx < 0 || texIdx >= 4) texIdx = 0;
+    if (texIdx < 0 || texIdx >= 9) texIdx = 0;
 
     vec3 color = texture(wallTex, vec3(texU, texV, float(texIdx))).rgb;
 

@@ -25,10 +25,16 @@ bool loadMap(const char* path) {
         if (cols > mapWidth) mapWidth = cols;
         for (int x = 0; x < cols; x++) {
             char c = line[x];
-            if (c >= '0' && c <= '9')
+            if (c >= '0' && c <= '9') {
+                /* Wall type */
                 worldMap[row][x] = c - '0';
-            else
+            } else if (c >= 'A' && c <= 'Z') {
+                /* Sprite character - store as negative value to distinguish from walls */
+                worldMap[row][x] = -c;  /* Negative ASCII value */
+            } else {
+                /* Empty space */
                 worldMap[row][x] = 0;
+            }
         }
         row++;
     }

@@ -22,7 +22,7 @@
 
 /* ===== constants ===== */
 #define TEX_SZ     512
-#define N_WALL_TEX 4
+#define N_WALL_TEX 9
 #define SKY_W      512
 #define SKY_H      128
 
@@ -137,26 +137,39 @@ void initRenderer(int w, int h) {
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-        static const char* wallPath = "resource/textures/wall/texture_3_dark_dirt_stones.png";
-        int tw, th, tc;
-        unsigned char* raw = stbi_load(wallPath, &tw, &th, &tc, 4);
-        std::vector<uint8_t> buf(TEX_SZ * TEX_SZ * 4);
+        /* Define all 9 wall/floor texture paths */
+        static const char* wallPaths[] = {
+            "resource/textures/wall/texture_1_dirt_moss_stones.png",
+            "resource/textures/wall/texture_2_full_moss.png",
+            "resource/textures/wall/texture_3_dark_dirt_stones.png",
+            "resource/textures/floor/texture_1_grass_yellow_flowers.png",
+            "resource/textures/floor/texture_2_grass_white_daisies.png",
+            "resource/textures/floor/texture_3_grass_blue_flowers.png",
+            "resource/textures/wall/texture_1_dirt_moss_stones.png", /* fallback */
+            "resource/textures/wall/texture_2_full_moss.png",         /* fallback */
+            "resource/textures/wall/texture_3_dark_dirt_stones.png"    /* fallback */
+        };
 
-        if (raw) {
-            for (int y = 0; y < TEX_SZ; y++)
-                for (int x = 0; x < TEX_SZ; x++) {
-                    int sx = x * tw / TEX_SZ, sy = y * th / TEX_SZ;
-                    memcpy(&buf[(y * TEX_SZ + x) * 4], &raw[(sy * tw + sx) * 4], 4);
-                }
-            stbi_image_free(raw);
-        } else {
-            fprintf(stderr, "WARNING: could not load %s\n", wallPath);
-            memset(buf.data(), 0x80, TEX_SZ * TEX_SZ * 4);
-        }
+        for (int i = 0; i < N_WALL_TEX; i++) {
+            int tw, th, tc;
+            unsigned char* raw = stbi_load(wallPaths[i], &tw, &th, &tc, 4);
+            std::vector<uint8_t> buf(TEX_SZ * TEX_SZ * 4);
 
-        for (int i = 0; i < N_WALL_TEX; i++)
+            if (raw) {
+                for (int y = 0; y < TEX_SZ; y++)
+                    for (int x = 0; x < TEX_SZ; x++) {
+                        int sx = x * tw / TEX_SZ, sy = y * th / TEX_SZ;
+                        memcpy(&buf[(y * TEX_SZ + x) * 4], &raw[(sy * tw + sx) * 4], 4);
+                    }
+                stbi_image_free(raw);
+            } else {
+                fprintf(stderr, "WARNING: could not load %s, using fallback\n", wallPaths[i]);
+                memset(buf.data(), 0x80, TEX_SZ * TEX_SZ * 4);
+            }
+
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i,
                             TEX_SZ, TEX_SZ, 1, GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
+        }
     }
 
     /* ---- floor texture (unit 2) ---- */
