@@ -1,16 +1,15 @@
 /*
  * tools/map_editor.cpp — Visual map editor for the raycaster
  *
- * Usage:  ./build/map_editor [size]
+ * Usage:  build/map_editor [size]
  *         size = side length (map will be size × size), default 32, max 256
  *
  * Controls:
- *   Left-click / drag   — place wall (DRAW mode) or erase (ERASE mode)
- *   Right-click / drag   — erase wall (always)
+ *   Left-click / drag    — place wall/sprite (DRAW mode) or erase (ERASE mode)
+ *   Right-click / drag   — erase wall/sprite (always)
  *   E                    — toggle DRAW / ERASE mode
- *   1-9                  — select wall type
- *   B,L,C,T,E,H,A,K      — place sprites (Barrel, Lamp, Column, Torch, Enemy, Health, Ammo, Key)
- *   S                    — toggle SPRITE placement mode
+ *   Scroll Wheel         — cycle through textures/sprites
+ *   Tab                  — switch between WALL and SPRITE brush mode
  *   G                    — toggle grid overlay
  *   C                    — clear interior (keep perimeter)
  *   Ctrl+S               — save to resource/maps/map.txt
@@ -19,6 +18,7 @@
  *   ESC                  — quit
  *
  * The perimeter is always walls (type 1) and cannot be erased.
+ * Sprites: B=boss, G=ghost, L=lamp, T=torch, H=health, A=ammo, K=key, C=column, R=barrel
  */
 
 #include <glad/glad.h>
@@ -29,6 +29,9 @@
 #include <fstream>
 #include <string>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb/stb_image.h"
+
 /* ---- constants ---- */
 #define MAX_DIM       256
 #define UNDO_DEPTH    256
@@ -37,16 +40,51 @@
 /* ---- map state ---- */
 static int mapSz = 32;
 static int grid[MAX_DIM][MAX_DIM];
+static GLFWwindow* window = NULL; /* Global window reference for render */
 
 /* ---- editor state ---- */
 static int  brushType  = 1;         /* wall type 1-9                     */
+static char spriteChar = 'L';       /* current sprite character          */
 static bool showGrid   = true;      /* grid overlay toggle               */
 static bool eraserMode = false;     /* E key toggles DRAW / ERASE        */
-static bool spriteMode = false;     /* S key toggles WALL / SPRITE mode  */
-static char spriteChar = 'B';       /* current sprite character          */
+static bool spriteMode = false;     /* Tab toggles WALL / SPRITE mode    */
 static bool painting   = false;     /* left mouse dragging               */
 static bool erasing    = false;     /* right mouse dragging              */
 static int  lastCellX  = -1, lastCellY = -1; /* for drag de-dup */
+
+/* ---- texture resources ---- */
+static GLuint wallTexGL[9] = {0};   /* wall textures 1-9                 */
+static const char* wallTexPaths[] = {
+    "resource/textures/wall/texture_1_dirt_moss_stones.png",
+    "resource/textures/wall/texture_2_full_moss.png",
+    "resource/textures/wall/texture_3_dark_dirt_stones.png",
+    "resource/textures/floor/texture_1_grass_yellow_flowers.png",
+    "resource/textures/floor/texture_2_grass_white_daisies.png",
+    "resource/textures/floor/texture_3_grass_blue_flowers.png",
+    "resource/textures/wall/texture_1_dirt_moss_stones.png", /* fallback */
+    "resource/textures/wall/texture_2_full_moss.png",         /* fallback */
+    "resource/textures/wall/texture_3_dark_dirt_stones.png"    /* fallback */
+};
+
+struct SpriteInfo {
+    char ch;
+    const char* name;
+    const char* path;
+    GLuint texID;
+};
+
+static SpriteInfo sprites[] = {
+    {'B', "Boss", "resource/textures/entities/boss01/boss_01_idle.png"},
+    {'G', "Ghost", "resource/textures/entities/ghost/sprite_enemy_01_00idle.png"},
+    {'L', "Lamp", "resource/textures/sprite_lamp.png"},
+    {'T', "Torch", "resource/textures/sprite_torch.png"},
+    {'H', "Health", "resource/textures/sprite_health.png"},
+    {'A', "Ammo", "resource/textures/sprite_ammo.png"},
+    {'K', "Key", "resource/textures/sprite_key.png"},
+    {'C', "Column", "resource/textures/sprite_column.png"},
+    {'R', "Barrel", "resource/textures/sprite_barrel.png"}
+};
+static const int NUM_SPRITES = sizeof(sprites) / sizeof(sprites[0]);
 
 /* ---- undo / redo ---- */
 struct Snapshot { int data[MAX_DIM][MAX_DIM]; };
@@ -93,11 +131,6 @@ static void initMap() {
     pushUndo();
 }
 
-static bool isValidSprite(char c) {
-    return c == 'B' || c == 'L' || c == 'C' || c == 'T' || 
-           c == 'E' || c == 'H' || c == 'A' || c == 'K';
-}
-
 static void clearInterior() {
     pushUndo();
     for (int y = 1; y < mapSz - 1; y++)
@@ -111,12 +144,16 @@ static bool saveMap(const char* path) {
     for (int y = 0; y < mapSz; y++) {
         for (int x = 0; x < mapSz; x++) {
             int v = grid[y][x];
-            if (v >= 0 && v <= 9)
+            if (v >= 0 && v <= 9) {
+                /* Wall type - save as digit */
                 f << (char)('0' + v);
-            else if (v > 0 && v < 128)
-                f << (char)v;  // Write sprite characters directly
-            else
+            } else if (v >= 'A' && v <= 'Z') {
+                /* Sprite character - save as letter */
+                f << (char)v;
+            } else {
+                /* Empty */
                 f << '0';
+            }
         }
         f << '\n';
     }
@@ -132,12 +169,14 @@ static bool loadExistingMap(const char* path) {
     while (std::getline(f, line) && row < mapSz) {
         for (int x = 0; x < mapSz && x < (int)line.size(); x++) {
             char c = line[x];
-            if (c >= '0' && c <= '9')
+            /* Load walls (digits) and sprites (letters) */
+            if (c >= '0' && c <= '9') {
                 grid[row][x] = c - '0';
-            else if (isValidSprite(c))
-                grid[row][x] = c;  // Store sprite character directly
-            else
+            } else if (c >= 'A' && c <= 'Z') {
+                grid[row][x] = c; /* Store sprite character directly */
+            } else {
                 grid[row][x] = 0;
+            }
         }
         row++;
     }
@@ -153,8 +192,8 @@ static bool loadExistingMap(const char* path) {
     return true;
 }
 
-/* ---- rendering (OpenGL immediate-mode style via a simple shader) ---- */
-static unsigned int shaderProg, vao, vbo;
+/* ---- rendering (OpenGL with texture support) ---- */
+static unsigned int shaderProg, texShaderProg, vao, vbo;
 
 static const char* vsSrc = R"(
 #version 330 core
@@ -176,8 +215,33 @@ out vec4 fragColor;
 void main() { fragColor = vec4(fCol, 1.0); }
 )";
 
+static const char* texVsSrc = R"(
+#version 330 core
+layout(location=0) in vec2 aPos;
+layout(location=1) in vec2 aTexCoord;
+uniform vec2 offset;
+uniform vec2 scale;
+out vec2 fTexCoord;
+void main() {
+    gl_Position = vec4(aPos * scale + offset, 0.0, 1.0);
+    fTexCoord = aTexCoord;
+}
+)";
+
+static const char* texFsSrc = R"(
+#version 330 core
+in vec2 fTexCoord;
+uniform sampler2D texSampler;
+uniform float alpha;
+out vec4 fragColor;
+void main() {
+    vec4 texColor = texture(texSampler, fTexCoord);
+    fragColor = vec4(texColor.rgb, texColor.a * alpha);
+}
+)";
+
 static void initGL() {
-    /* compile shaders */
+    /* compile color shaders */
     unsigned int vs = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vs, 1, &vsSrc, NULL);
     glCompileShader(vs);
@@ -191,24 +255,46 @@ static void initGL() {
     glDeleteShader(vs);
     glDeleteShader(fs);
 
-    /* unit quad (0,0)-(1,1) */
-    float quad[] = { 0,0, 1,0, 1,1, 0,0, 1,1, 0,1 };
+    /* compile texture shaders */
+    unsigned int texVs = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(texVs, 1, &texVsSrc, NULL);
+    glCompileShader(texVs);
+    unsigned int texFs = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(texFs, 1, &texFsSrc, NULL);
+    glCompileShader(texFs);
+    texShaderProg = glCreateProgram();
+    glAttachShader(texShaderProg, texVs);
+    glAttachShader(texShaderProg, texFs);
+    glLinkProgram(texShaderProg);
+    glDeleteShader(texVs);
+    glDeleteShader(texFs);
+
+    /* unit quad with texture coordinates */
+    float quad[] = {
+        0,0, 0,0,
+        1,0, 1,0,
+        1,1, 1,1,
+        0,0, 0,0,
+        1,1, 1,1,
+        0,1, 0,1
+    };
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
 }
 
 static void drawRect(float x, float y, float w, float h, float r, float g, float b) {
     glUseProgram(shaderProg);
-    /* convert pixel coords to NDC: x,y in [0..WINDOW_SIZE] → [-1..1] */
     float sx = 2.0f * w / WINDOW_SIZE;
     float sy = 2.0f * h / WINDOW_SIZE;
     float ox = 2.0f * x / WINDOW_SIZE - 1.0f;
-    float oy = 1.0f - 2.0f * (y + h) / WINDOW_SIZE; /* flip Y */
+    float oy = 1.0f - 2.0f * (y + h) / WINDOW_SIZE;
     glUniform2f(glGetUniformLocation(shaderProg, "offset"), ox, oy);
     glUniform2f(glGetUniformLocation(shaderProg, "scale"),  sx, sy);
     glUniform3f(glGetUniformLocation(shaderProg, "color"),  r, g, b);
@@ -216,25 +302,80 @@ static void drawRect(float x, float y, float w, float h, float r, float g, float
     glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
-/* wall type → colour */
+static void drawTexturedRect(float x, float y, float w, float h, GLuint texID, float alpha = 1.0f) {
+    glUseProgram(texShaderProg);
+    float sx = 2.0f * w / WINDOW_SIZE;
+    float sy = 2.0f * h / WINDOW_SIZE;
+    float ox = 2.0f * x / WINDOW_SIZE - 1.0f;
+    float oy = 1.0f - 2.0f * (y + h) / WINDOW_SIZE;
+    glUniform2f(glGetUniformLocation(texShaderProg, "offset"), ox, oy);
+    glUniform2f(glGetUniformLocation(texShaderProg, "scale"),  sx, sy);
+    glUniform1f(glGetUniformLocation(texShaderProg, "alpha"), alpha);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texID);
+    glUniform1i(glGetUniformLocation(texShaderProg, "texSampler"), 0);
+    glBindVertexArray(vao);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
+static GLuint loadTexture(const char* path) {
+    int w, h, channels;
+    unsigned char* data = stbi_load(path, &w, &h, &channels, 4);
+    if (!data) {
+        fprintf(stderr, "Warning: Could not load %s\n", path);
+        /* create fallback 1x1 white texture */
+        GLuint tex;
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        unsigned char white[] = {255, 255, 255, 255};
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, white);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        return tex;
+    }
+    
+    GLuint tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    stbi_image_free(data);
+    return tex;
+}
+
+static void loadAllTextures() {
+    /* Load wall textures */
+    for (int i = 0; i < 9; i++) {
+        wallTexGL[i] = loadTexture(wallTexPaths[i]);
+    }
+    
+    /* Load sprite textures */
+    for (int i = 0; i < NUM_SPRITES; i++) {
+        sprites[i].texID = loadTexture(sprites[i].path);
+    }
+}
+
 static void wallColor(int type, float& r, float& g, float& b) {
     switch (type) {
-        case 1: r=0.60f; g=0.60f; b=0.60f; break; /* gray stone   */
-        case 2: r=0.55f; g=0.30f; b=0.15f; break; /* brown brick  */
-        case 3: r=0.25f; g=0.50f; b=0.25f; break; /* green moss   */
-        case 4: r=0.50f; g=0.40f; b=0.20f; break; /* wood         */
-        case 5: r=0.30f; g=0.30f; b=0.70f; break; /* blue tile    */
-        case 6: r=0.70f; g=0.20f; b=0.20f; break; /* red          */
-        case 7: r=0.70f; g=0.70f; b=0.20f; break; /* yellow       */
-        case 8: r=0.40f; g=0.20f; b=0.50f; break; /* purple       */
-        case 9: r=0.85f; g=0.85f; b=0.85f; break; /* white        */
+        case 1: r=0.60f; g=0.60f; b=0.60f; break;
+        case 2: r=0.55f; g=0.30f; b=0.15f; break;
+        case 3: r=0.25f; g=0.50f; b=0.25f; break;
+        case 4: r=0.50f; g=0.40f; b=0.20f; break;
+        case 5: r=0.30f; g=0.30f; b=0.70f; break;
+        case 6: r=0.70f; g=0.20f; b=0.20f; break;
+        case 7: r=0.70f; g=0.70f; b=0.20f; break;
+        case 8: r=0.40f; g=0.20f; b=0.50f; break;
+        case 9: r=0.85f; g=0.85f; b=0.85f; break;
         default: r=0.0f; g=0.0f; b=0.0f;   break;
     }
 }
 
-static char spriteToChar(int v) {
-    if (v >= 'A' && v <= 'Z') return (char)v;
-    return 0;
+static bool isPerimeter(int cx, int cy) {
+    return cx == 0 || cy == 0 || cx == mapSz - 1 || cy == mapSz - 1;
 }
 
 static void render() {
@@ -247,27 +388,17 @@ static void render() {
     for (int y = 0; y < mapSz; y++)
         for (int x = 0; x < mapSz; x++) {
             int v = grid[y][x];
-            if (v > 0 && v <= 9) {
-                float r, g, b;
-                wallColor(v, r, g, b);
-                drawRect(x * cellPx, y * cellPx, cellPx, cellPx, r, g, b);
-            } else if (v > 9) {
-                /* Sprite - draw as colored circle */
-                char c = spriteToChar(v);
-                float r=0.8f, g=0.8f, b=0.2f;  // Default yellow
-                if (c == 'B') { r=0.6f; g=0.4f; b=0.2f; }  // Barrel - brown
-                else if (c == 'L') { r=1.0f; g=0.9f; b=0.3f; }  // Lamp - bright yellow
-                else if (c == 'C') { r=0.7f; g=0.7f; b=0.7f; }  // Column - gray
-                else if (c == 'T') { r=1.0f; g=0.4f; b=0.0f; }  // Torch - orange
-                else if (c == 'E') { r=0.9f; g=0.2f; b=0.2f; }  // Enemy - red
-                else if (c == 'H') { r=0.2f; g=0.9f; b=0.2f; }  // Health - green
-                else if (c == 'A') { r=0.9f; g=0.9f; b=0.2f; }  // Ammo - yellow
-                else if (c == 'K') { r=0.9f; g=0.7f; b=0.0f; }  // Key - gold
-                
-                /* Draw circle approximation with small square */
-                float margin = cellPx * 0.2f;
-                drawRect(x * cellPx + margin, y * cellPx + margin, 
-                        cellPx - 2*margin, cellPx - 2*margin, r, g, b);
+            if (v >= 1 && v <= 9) {
+                drawTexturedRect(x * cellPx, y * cellPx, cellPx, cellPx, wallTexGL[v-1]);
+            } else if (v >= 'A' && v <= 'Z') {
+                char ch = (char)v;
+                for (int s = 0; s < NUM_SPRITES; s++) {
+                    if (sprites[s].ch == ch) {
+                        drawRect(x * cellPx, y * cellPx, cellPx, cellPx, 0.3f, 0.6f, 0.3f);
+                        drawTexturedRect(x * cellPx, y * cellPx, cellPx, cellPx, sprites[s].texID, 0.7f);
+                        break;
+                    }
+                }
             }
         }
 
@@ -281,32 +412,56 @@ static void render() {
         }
     }
 
-    /* brush indicator (HUD) */
-    float hx = WINDOW_SIZE - 60.0f, hy = 8.0f;
-    if (spriteMode) {
-        /* Blue border to indicate sprite mode */
-        drawRect(hx, hy, 50.0f, 30.0f, 0.2f, 0.4f, 0.9f);
-        drawRect(hx + 2, hy + 2, 46.0f, 26.0f, 0.12f, 0.12f, 0.14f);
-        /* Show sprite character */
-        char label[32];
-        snprintf(label, sizeof(label), "Sprite: %c", spriteChar);
-        printf("%s\r", label);  // Update in console
-    } else if (eraserMode) {
-        /* red border to indicate eraser mode */
-        drawRect(hx, hy, 30.0f, 30.0f, 0.8f, 0.15f, 0.15f);
-        drawRect(hx + 3, hy + 3, 24.0f, 24.0f, 0.12f, 0.12f, 0.14f);
+    /* brush preview at mouse position */
+    double mx, my;
+    int mouseCx = -1, mouseCy = -1;
+    {
+        glfwGetCursorPos(window, &mx, &my);
+        if (mx >= 0 && mx < WINDOW_SIZE && my >= 0 && my < WINDOW_SIZE) {
+            mouseCx = (int)(mx / cellPx);
+            mouseCy = (int)(my / cellPx);
+        }
+    }
+    
+    if (mouseCx >= 0 && mouseCy >= 0 && mouseCx < mapSz && mouseCy < mapSz && !isPerimeter(mouseCx, mouseCy)) {
+        if (!eraserMode) {
+            if (spriteMode) {
+                for (int s = 0; s < NUM_SPRITES; s++) {
+                    if (sprites[s].ch == spriteChar) {
+                        drawRect(mouseCx * cellPx, mouseCy * cellPx, cellPx, cellPx, 0.3f, 0.6f, 0.3f);
+                        drawTexturedRect(mouseCx * cellPx, mouseCy * cellPx, cellPx, cellPx, sprites[s].texID, 0.5f);
+                        break;
+                    }
+                }
+            } else {
+                drawTexturedRect(mouseCx * cellPx, mouseCy * cellPx, cellPx, cellPx, wallTexGL[brushType-1], 0.5f);
+            }
+        } else {
+            drawRect(mouseCx * cellPx, mouseCy * cellPx, cellPx, cellPx, 0.8f, 0.2f, 0.2f);
+        }
+    }
+
+    /* HUD - current brush info */
+    float hx = WINDOW_SIZE - 50.0f, hy = 8.0f;
+    if (eraserMode) {
+        drawRect(hx, hy, 40.0f, 40.0f, 0.8f, 0.15f, 0.15f);
+        drawRect(hx + 3, hy + 3, 34.0f, 34.0f, 0.12f, 0.12f, 0.14f);
+    } else if (spriteMode) {
+        drawRect(hx, hy, 40.0f, 40.0f, 0.2f, 0.2f, 0.2f);
+        for (int s = 0; s < NUM_SPRITES; s++) {
+            if (sprites[s].ch == spriteChar) {
+                drawRect(hx + 2, hy + 2, 36.0f, 36.0f, 0.9f, 0.9f, 0.9f);
+                drawTexturedRect(hx + 2, hy + 2, 36.0f, 36.0f, sprites[s].texID);
+                break;
+            }
+        }
     } else {
-        drawRect(hx, hy, 30.0f, 30.0f, 0.2f, 0.2f, 0.2f);
-        float br, bg, bb;
-        wallColor(brushType, br, bg, bb);
-        drawRect(hx + 3, hy + 3, 24.0f, 24.0f, br, bg, bb);
+        drawRect(hx, hy, 40.0f, 40.0f, 0.2f, 0.2f, 0.2f);
+        drawTexturedRect(hx + 2, hy + 2, 36.0f, 36.0f, wallTexGL[brushType-1]);
     }
 }
 
 /* ---- input ---- */
-static bool isPerimeter(int cx, int cy) {
-    return cx == 0 || cy == 0 || cx == mapSz - 1 || cy == mapSz - 1;
-}
 
 static void cellFromMouse(GLFWwindow* w, int& cx, int& cy) {
     double mx, my;
@@ -335,6 +490,7 @@ static void paintLine(int x0, int y0, int x1, int y1, int value) {
 
 static void mouseButtonCB(GLFWwindow* w, int button, int action, int mods) {
     (void)mods;
+    
     int cx, cy;
     cellFromMouse(w, cx, cy);
 
@@ -342,15 +498,15 @@ static void mouseButtonCB(GLFWwindow* w, int button, int action, int mods) {
         if (action == GLFW_PRESS) {
             painting = true;
             pushUndo();
-            int value;
-            if (eraserMode) {
-                value = 0;
-            } else if (spriteMode) {
-                value = (int)spriteChar;  // Store sprite character as int
-            } else {
-                value = brushType;
+            if (!isPerimeter(cx, cy)) {
+                if (eraserMode) {
+                    grid[cy][cx] = 0;
+                } else if (spriteMode) {
+                    grid[cy][cx] = spriteChar;
+                } else {
+                    grid[cy][cx] = brushType;
+                }
             }
-            if (!isPerimeter(cx, cy)) grid[cy][cx] = value;
             lastCellX = cx; lastCellY = cy;
         } else {
             painting = false;
@@ -377,21 +533,54 @@ static void cursorPosCB(GLFWwindow* w, double mx, double my) {
     cellFromMouse(w, cx, cy);
     if (cx == lastCellX && cy == lastCellY) return;
 
-    int value;
-    if (erasing) {
-        value = 0;
-    } else if (spriteMode) {
-        value = (int)spriteChar;
-    } else {
-        value = eraserMode ? 0 : brushType;
+    if (!isPerimeter(cx, cy)) {
+        if (eraserMode) {
+            grid[cy][cx] = 0;
+        } else if (spriteMode) {
+            grid[cy][cx] = spriteChar;
+        } else {
+            grid[cy][cx] = brushType;
+        }
     }
-    
-    if (lastCellX >= 0)
-        paintLine(lastCellX, lastCellY, cx, cy, value);
-    else if (!isPerimeter(cx, cy))
-        grid[cy][cx] = value;
 
     lastCellX = cx; lastCellY = cy;
+}
+
+static void scrollCB(GLFWwindow* w, double xoffset, double yoffset) {
+    (void)xoffset;
+    if (yoffset > 0) {
+        /* Scroll up */
+        if (spriteMode) {
+            /* Cycle through sprites forward */
+            int idx = 0;
+            for (int i = 0; i < NUM_SPRITES; i++) {
+                if (sprites[i].ch == spriteChar) { idx = i; break; }
+            }
+            idx = (idx + 1) % NUM_SPRITES;
+            spriteChar = sprites[idx].ch;
+            printf("Sprite: %s (%c)\n", sprites[idx].name, spriteChar);
+        } else {
+            /* Cycle through wall types forward */
+            brushType = (brushType % 9) + 1;
+            printf("Wall type: %d\n", brushType);
+        }
+    } else if (yoffset < 0) {
+        /* Scroll down */
+        if (spriteMode) {
+            /* Cycle through sprites backward */
+            int idx = 0;
+            for (int i = 0; i < NUM_SPRITES; i++) {
+                if (sprites[i].ch == spriteChar) { idx = i; break; }
+            }
+            idx = (idx - 1 + NUM_SPRITES) % NUM_SPRITES;
+            spriteChar = sprites[idx].ch;
+            printf("Sprite: %s (%c)\n", sprites[idx].name, spriteChar);
+        } else {
+            /* Cycle through wall types backward */
+            brushType = ((brushType - 2 + 9) % 9) + 1;
+            printf("Wall type: %d\n", brushType);
+        }
+    }
 }
 
 static void keyCB(GLFWwindow* w, int key, int scancode, int action, int mods) {
@@ -400,49 +589,33 @@ static void keyCB(GLFWwindow* w, int key, int scancode, int action, int mods) {
 
     /* 1-9 = brush type */
     if (key >= GLFW_KEY_1 && key <= GLFW_KEY_9) {
+        spriteMode = false;
         brushType = key - GLFW_KEY_0;
-        printf("Brush: wall type %d\n", brushType);
+        printf("Wall type: %d\n", brushType);
         return;
     }
 
     bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
 
-    /* Sprite selection keys (work in any mode) */
-    if (!ctrl) {
-        switch (key) {
-            case GLFW_KEY_B: spriteChar = 'B'; printf("Sprite selected: Barrel (B)\n"); break;
-            case GLFW_KEY_L: spriteChar = 'L'; printf("Sprite selected: Lamp (L)\n"); break;
-            case GLFW_KEY_C: spriteChar = 'C'; printf("Sprite selected: Column (C)\n"); break;
-            case GLFW_KEY_T: spriteChar = 'T'; printf("Sprite selected: Torch (T)\n"); break;
-            case GLFW_KEY_E: spriteChar = 'E'; printf("Sprite selected: Enemy (E)\n"); break;
-            case GLFW_KEY_H: spriteChar = 'H'; printf("Sprite selected: Health (H)\n"); break;
-            case GLFW_KEY_A: spriteChar = 'A'; printf("Sprite selected: Ammo (A)\n"); break;
-            case GLFW_KEY_K: spriteChar = 'K'; printf("Sprite selected: Key (K)\n"); break;
-        }
-    }
-
     switch (key) {
-        case GLFW_KEY_E:
-            if (!ctrl && !spriteMode) {  // Only toggle eraser in wall mode without Ctrl
-                eraserMode = !eraserMode;
-                printf("Mode: %s\n", eraserMode ? "ERASE" : "DRAW");
-            }
+        case GLFW_KEY_TAB:
+            spriteMode = !spriteMode;
+            printf("Mode: %s\n", spriteMode ? "SPRITE" : "WALL");
             break;
-        case GLFW_KEY_S:
-            if (ctrl) {
-                saveMap("resource/maps/map.txt");
-            } else {
-                spriteMode = !spriteMode;
-                printf("Mode: %s\n", spriteMode ? "SPRITE" : "WALL");
-            }
+        case GLFW_KEY_E:
+            eraserMode = !eraserMode;
+            printf("Brush: %s\n", eraserMode ? "ERASE" : "DRAW");
             break;
         case GLFW_KEY_G:
             showGrid = !showGrid;
             break;
         case GLFW_KEY_C:
+            clearInterior();
+            printf("Cleared interior\n");
+            break;
+        case GLFW_KEY_S:
             if (ctrl) {
-                clearInterior();
-                printf("Cleared interior\n");
+                saveMap("resource/maps/map.txt");
             }
             break;
         case GLFW_KEY_Z:
@@ -477,17 +650,17 @@ int main(int argc, char** argv) {
     printf("=== Raycaster Map Editor ===\n");
     printf("Map size: %d x %d\n", mapSz, mapSz);
     printf("Controls:\n");
-    printf("  Left-click/drag   — place wall/sprite or erase\n");
-    printf("  Right-click/drag  — erase (always)\n");
-    printf("  E                 — toggle DRAW/ERASE (wall mode only)\n");
-    printf("  S                 — toggle WALL/SPRITE mode\n");
-    printf("  1-9               — select wall type (wall mode)\n");
-    printf("  B,L,C,T,E,H,A,K   — select sprite type (any mode)\n");
-    printf("  G                 — toggle grid\n");
-    printf("  Ctrl+C            — clear interior\n");
-    printf("  Ctrl+S            — save map\n");
-    printf("  Ctrl+Z / Ctrl+Y   — undo / redo\n");
-    printf("  ESC               — quit\n");
+    printf("  Left-click/drag    — place wall/sprite (DRAW) or erase (ERASE)\n");
+    printf("  Right-click/drag   — erase wall/sprite (always)\n");
+    printf("  Scroll Wheel       — cycle through textures/sprites\n");
+    printf("  Tab                — switch between WALL and SPRITE mode\n");
+    printf("  E                  — toggle DRAW / ERASE mode\n");
+    printf("  1-9                — select wall type (quick select)\n");
+    printf("  G                  — toggle grid\n");
+    printf("  C                  — clear interior\n");
+    printf("  Ctrl+S             — save map\n");
+    printf("  Ctrl+Z / Ctrl+Y    — undo / redo\n");
+    printf("  ESC                — quit\n");
     printf("============================\n");
 
     if (!glfwInit()) {
@@ -499,10 +672,11 @@ int main(int argc, char** argv) {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_STICKY_KEYS, GLFW_TRUE);
 
     char title[128];
     snprintf(title, sizeof(title), "Map Editor  [%dx%d]  brush: 1", mapSz, mapSz);
-    GLFWwindow* window = glfwCreateWindow(WINDOW_SIZE, WINDOW_SIZE, title, NULL, NULL);
+    window = glfwCreateWindow(WINDOW_SIZE, WINDOW_SIZE, title, NULL, NULL);
     if (!window) {
         fprintf(stderr, "Failed to create window\n");
         glfwTerminate();
@@ -517,10 +691,12 @@ int main(int argc, char** argv) {
 
     glViewport(0, 0, WINDOW_SIZE, WINDOW_SIZE);
     initGL();
+    loadAllTextures();
 
     glfwSetMouseButtonCallback(window, mouseButtonCB);
     glfwSetCursorPosCallback(window, cursorPosCB);
     glfwSetKeyCallback(window, keyCB);
+    glfwSetScrollCallback(window, scrollCB);
 
     /* try loading existing map (will be cropped/padded to mapSz) */
     initMap();
@@ -531,16 +707,13 @@ int main(int argc, char** argv) {
         render();
 
         /* update title with brush info */
-        snprintf(title, sizeof(title), "Map Editor  [%dx%d]  %s  %s",
-                 mapSz, mapSz, 
-                 spriteMode ? "SPRITE" : (eraserMode ? "ERASE" : "DRAW"),
-                 spriteMode ? "Sprite: X" : "Brush: X");
+        const char* modeStr = eraserMode ? "ERASE" : (spriteMode ? "SPRITE" : "DRAW");
         if (spriteMode) {
-            title[strlen(title)-1] = spriteChar;
+            snprintf(title, sizeof(title), "Map Editor  [%dx%d]  %s  sprite: %c",
+                     mapSz, mapSz, modeStr, spriteChar);
         } else {
-            char buf[4];
-            snprintf(buf, sizeof(buf), "%d", brushType);
-            strcat(title, buf);
+            snprintf(title, sizeof(title), "Map Editor  [%dx%d]  %s  wall: %d",
+                     mapSz, mapSz, modeStr, brushType);
         }
         glfwSetWindowTitle(window, title);
 

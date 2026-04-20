@@ -1,20 +1,36 @@
 #include <glad/glad.h>
 #include "hud_renderer.h"
 #include "shader.h"
-#include <stb/stb_image.h>
+#include "../settings/settings.h"
 #include <cstdio>
 #include <cmath>
 
 namespace hud {
 
-static unsigned int prog, vao, vbo, weaponTex;
-static int scrW, scrH;
-static float bobTimer  = 0.0f;
-static float bobOffset = 0.0f;  // NDC units
-static float recoilOffset = 0.0f;  // Weapon recoil (positive = closer to camera)
-static float damageFlashAlpha = 0.0f;  // Red flash when hit
+/* ================================================================== */
+/*                    internal state                                   */
+/* ================================================================== */
 
-// ---- Shaders ----
+static unsigned int prog, vao, vbo;
+static int scrW, scrH;
+
+/* bob */
+static float bobTimer  = 0.0f;
+static float bobOffsetY = 0.0f;
+static float bobOffsetX = 0.0f;
+
+/* weapon instances (all preloaded) */
+static Weapon weapons[4];          /* AR, SG, EN, HG */
+static Weapon* active = nullptr;
+
+/* uniform locations for solid-colour quads (ammo bars) */
+static int uUseSolidColor = -1;
+static int uSolidColor    = -1;
+
+/* ================================================================== */
+/*                    shaders                                          */
+/* ================================================================== */
+
 static const char* vsrc = R"(
 #version 330 core
 layout(location=0) in vec2 aPos;
@@ -31,12 +47,19 @@ static const char* fsrc = R"(
 in  vec2 uv;
 out vec4 fragColor;
 uniform sampler2D weaponTex;
+uniform bool useSolidColor;
+uniform vec4 solidColor;
 void main() {
+    if (useSolidColor) { fragColor = solidColor; return; }
     vec4 c = texture(weaponTex, uv);
-    if (c.a < 0.1) discard;   // alpha clip for transparency
+    if (c.a < 0.1) discard;
     fragColor = c;
 }
 )";
+
+/* ================================================================== */
+/*                    public API                                       */
+/* ================================================================== */
 
 void initHUD(int screenW, int screenH) {
     scrW = screenW;
@@ -44,20 +67,8 @@ void initHUD(int screenW, int screenH) {
 
     prog = shader::createShaderProgram(vsrc, fsrc);
 
-    // Initial quad (will be updated each frame with bob)
-    // Weapon positioning - modify these values to adjust:
-    // x0/x1 control width (currently spans from -0.6 to 0.6 in NDC)
-    // y0/y1 control height and position (y0=-1.0 is bottom, y1=-0.05 gives taller weapon)
-    // To make it LARGER, increase the range:
-    float x0 = -1.0f, x1 = 1.0f;   // Wider (1.6 units)
-    float y0 = -0.75f, y1 = 0.75f;   // Taller (1.0 unit)
-    float quad[] = {
-        x0, y0,   0.0f, 1.0f,
-        x1, y0,   1.0f, 1.0f,
-        x0, y1,   0.0f, 0.0f,
-        x1, y1,   1.0f, 0.0f,
-    };
-
+    /* quad — will be updated per-frame */
+    float quad[16] = {};
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
     glBindVertexArray(vao);
@@ -65,66 +76,168 @@ void initHUD(int screenW, int screenH) {
     glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_DYNAMIC_DRAW);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)(2*sizeof(float)));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float),
+                          (void*)(2*sizeof(float)));
     glEnableVertexAttribArray(1);
     glBindVertexArray(0);
 
-    // Load weapon texture
-    int w, h, ch;
-    unsigned char* data = stbi_load("resource/textures/weapon_pistol.png", &w, &h, &ch, 4);
-    glGenTextures(1, &weaponTex);
-    glBindTexture(GL_TEXTURE_2D, weaponTex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    if (data) {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-        stbi_image_free(data);
-    } else {
-        fprintf(stderr, "WARNING: could not load weapon texture\n");
-        unsigned char fallback[4] = {200, 200, 200, 255};
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, fallback);
-    }
-
     glUseProgram(prog);
     glUniform1i(glGetUniformLocation(prog, "weaponTex"), 0);
+    uUseSolidColor = glGetUniformLocation(prog, "useSolidColor");
+    uSolidColor    = glGetUniformLocation(prog, "solidColor");
+
+    /* preload ALL weapon instances */
+    weapons[0] = createAssaultRifle();
+    weapons[1] = createShotgun();
+    weapons[2] = createEnergyWeapon();
+    weapons[3] = createHandgun();
 }
 
-void updateBob(bool isMoving, float deltaTime) {
-    if (isMoving) bobTimer += deltaTime * 8.0f;
-    else bobTimer = 0.0f;
-    bobOffset = isMoving ? sinf(bobTimer) * 0.04f : 0.0f;
+static bool equipWeapon(int index) {
+    Weapon* w = &weapons[index];
+    if (active == w) return false;
+    active = w;
+    w->state         = WeaponState::IDLE;
+    w->animTimer     = 0.0f;
+    w->autoFireTimer = 0.0f;
+    w->prevLmb       = false;
+    w->prevRmb       = false;
+    if (w->isEnergy) { w->depleted1 = false; w->depleted2 = false; }
+    return true;
 }
 
-void updateRecoil(bool isFiring, float deltaTime) {
-    const float RECOIL_SPEED = 8.0f;   // How fast weapon kicks back
-    const float RECOVERY_SPEED = 16.0f;  // How fast it returns
-    const float MAX_RECOIL = 0.05f;     // Maximum recoil distance
-    
-    if (isFiring) {
-        // Kick weapon towards camera
-        recoilOffset += RECOIL_SPEED * deltaTime;
-        if (recoilOffset > MAX_RECOIL) recoilOffset = MAX_RECOIL;
+void equipAssaultRifle()  { if (equipWeapon(0)) printf("Assault Rifle equipped.\n"); }
+void equipShotgun()       { if (equipWeapon(1)) printf("Shotgun equipped.\n"); }
+void equipEnergyWeapon()  { if (equipWeapon(2)) printf("Energy Weapon equipped.\n"); }
+void equipHandgun()       { if (equipWeapon(3)) printf("Handgun equipped.\n"); }
+
+WeaponType currentWeapon() { return active ? active->type : WeaponType::NONE; }
+bool firedThisFrame() { return active && active->firedThisFrame; }
+bool firedAltThisFrame() { return active && active->firedAltThisFrame; }
+
+void fireGrenade() { if (active) weaponFireSecondary(*active); }
+void reload()      { if (active) weaponReload(*active); }
+
+void updateHUD(bool isMoving, float deltaTime, bool lmbHeld, bool rmbHeld) {
+    /* bob animation — only sway horizontally and bob downward */
+    if (isMoving && active && active->state == WeaponState::IDLE) {
+        float bobSpeed = settings::getFloat("hud_bob_speed", 7.0f);
+        float bobV     = settings::getFloat("hud_bob_vertical", 0.015f);
+        float bobH     = settings::getFloat("hud_bob_horizontal", 0.012f);
+        bobTimer += deltaTime * bobSpeed;
+        float raw = sinf(bobTimer);
+        bobOffsetY = (raw < 0.0f) ? raw * bobV : 0.0f;
+        bobOffsetX = cosf(bobTimer * 0.5f) * bobH;
     } else {
-        // Recover to normal position
-        recoilOffset -= RECOVERY_SPEED * deltaTime;
-        if (recoilOffset < 0.0f) recoilOffset = 0.0f;
+        float decay = settings::getFloat("hud_bob_decay", 0.9f);
+        bobOffsetY *= decay;
+        bobOffsetX *= decay;
+        if (!isMoving) bobTimer = 0.0f;
     }
+
+    if (active)
+        updateWeapon(*active, deltaTime, lmbHeld, rmbHeld);
 }
 
-void triggerDamageFlash() {
-    damageFlashAlpha = 0.5f;  // Start with semi-transparent red overlay
+/* ================================================================== */
+/*  rendering helpers                                                  */
+/* ================================================================== */
+
+static void drawRect(float x0, float y0, float x1, float y1,
+                     float r, float g, float b, float a) {
+    glUniform1i(uUseSolidColor, 1);
+    glUniform4f(uSolidColor, r, g, b, a);
+    float v[] = {
+        x0, y0, 0,0,  x1, y0, 1,0,
+        x0, y1, 0,1,  x1, y1, 1,1,
+    };
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+}
+
+static void drawAmmoBars() {
+    if (!active) return;
+    if (!active->bar1.show && !active->bar2.show) return;
+
+    auto px2x = [](float px) { return 2.0f * px / scrW - 1.0f; };
+    auto px2y = [](float py) { return 1.0f - 2.0f * py / scrH; };
+
+    const float barW = 200.0f, barH = 14.0f;
+    const float margin = 20.0f, bottomMargin = 40.0f;
+    const float gap = 6.0f, iconW = 14.0f, iconGap = 4.0f;
+
+    float bxL = scrW - margin - barW;
+    float bxR = scrW - margin;
+    float byBot = scrH - bottomMargin;
+    float byTop = byBot - barH;
+    float iconLeft = bxL - iconGap - iconW;
+
+    /* bar 1 */
+    if (active->bar1.show) {
+        float fill;
+        if (active->isEnergy) fill = active->charge1;
+        else fill = active->maxAmmo1 > 0 ? (float)active->ammo1 / active->maxAmmo1 : 0;
+
+        auto& c = active->bar1;
+        drawRect(px2x(iconLeft), px2y(byBot), px2x(iconLeft + iconW), px2y(byTop),
+                 c.r, c.g, c.b, 0.9f);
+        drawRect(px2x(bxL), px2y(byBot), px2x(bxR), px2y(byTop),
+                 0.15f, 0.15f, 0.15f, 0.7f);
+        drawRect(px2x(bxL), px2y(byBot), px2x(bxL + barW * fill), px2y(byTop),
+                 c.r, c.g, c.b, 0.85f);
+    }
+
+    /* bar 2 */
+    if (active->bar2.show) {
+        float gyBot = byTop - gap;
+        float gyTop = gyBot - barH;
+
+        float fill;
+        if (active->isEnergy) fill = active->charge2;
+        else fill = active->maxAmmo2 > 0 ? (float)active->ammo2 / active->maxAmmo2 : 0;
+
+        auto& c = active->bar2;
+        drawRect(px2x(iconLeft), px2y(gyBot), px2x(iconLeft + iconW), px2y(gyTop),
+                 c.r, c.g, c.b, 0.9f);
+        drawRect(px2x(bxL), px2y(gyBot), px2x(bxR), px2y(gyTop),
+                 0.15f, 0.15f, 0.15f, 0.7f);
+        drawRect(px2x(bxL), px2y(gyBot), px2x(bxL + barW * fill), px2y(gyTop),
+                 c.r, c.g, c.b, 0.85f);
+    }
 }
 
 void renderWeapon() {
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (!active) return;
 
-    // Update quad with bob and recoil offsets
-    // Recoil makes weapon bigger (closer to camera)
-    const float MAX_BOB = 0.1f;
-    float x0 = -1.0f, x1 = 1.0f;
-    float y0 = -1.0f - MAX_BOB + bobOffset + recoilOffset;  // Add recoil
-    float y1 = 0.5f - MAX_BOB + bobOffset + recoilOffset;   // Add recoil
+    unsigned int curTex = getWeaponTexture(*active);
+
+    /* weapon quad — positioned at bottom, shifted right.
+       The base coordinates were designed for 4:3.  Correct the
+       horizontal extent so the sprite keeps its proportions.     */
+    float aspect = (float)scrW / (float)scrH;
+    float ax = (4.0f / 3.0f) / aspect;   /* 1.0 at 4:3, 0.75 at 16:9 */
+    float cx = settings::getFloat("hud_weapon_center_x", 0.3f);
+    float hw = settings::getFloat("hud_weapon_half_width", 0.8f) * ax;
+    float x0 = cx - hw + bobOffsetX;
+    float x1 = cx + hw + bobOffsetX;
+    float y0 = settings::getFloat("hud_weapon_bottom", -1.0f) + bobOffsetY;
+    float y1 = settings::getFloat("hud_weapon_top", 0.2f) + bobOffsetY;
+
+    /* slight recoil kick during fire */
+    if (active->state == WeaponState::FIRE_BULLET) {
+        float dur = active->fireDur;
+        float t = active->animTimer / dur;
+        float kick = sinf(t * 3.14159f) * active->recoilKick;
+        y0 -= kick;
+        y1 -= kick;
+    } else if (active->state == WeaponState::FIRE_GRENADE) {
+        float dur = active->altFireDur;
+        float t = active->animTimer / dur;
+        float kick = sinf(t * 3.14159f) * active->altRecoilKick;
+        y0 -= kick;
+        y1 -= kick;
+    }
+
     float verts[] = {
         x0, y0,   0.0f, 1.0f,
         x1, y0,   1.0f, 1.0f,
@@ -132,87 +245,29 @@ void renderWeapon() {
         x1, y1,   1.0f, 0.0f,
     };
 
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     glUseProgram(prog);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
 
+    /* draw weapon sprite */
+    glUniform1i(uUseSolidColor, 0);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, weaponTex);
+    glBindTexture(GL_TEXTURE_2D, curTex);
     glBindVertexArray(vao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    /* draw ammo bars */
+    drawAmmoBars();
+
     glBindVertexArray(0);
-
     glDisable(GL_BLEND);
-
-    // Render damage flash overlay
-    if (damageFlashAlpha > 0.0f) {
-        glDisable(GL_DEPTH_TEST);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        
-        // Draw full-screen red quad
-        float flashVerts[] = {
-            -1.0f, -1.0f,
-             1.0f, -1.0f,
-            -1.0f,  1.0f,
-             1.0f,  1.0f,
-        };
-        
-        GLuint flashVAO, flashVBO;
-        glGenVertexArrays(1, &flashVAO);
-        glGenBuffers(1, &flashVBO);
-        glBindVertexArray(flashVAO);
-        glBindBuffer(GL_ARRAY_BUFFER, flashVBO);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(flashVerts), flashVerts, GL_STATIC_DRAW);
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-        glEnableVertexAttribArray(0);
-        
-        // Simple red shader
-        static const char* flashVS = R"(
-            #version 330 core
-            layout (location = 0) in vec2 pos;
-            void main() { gl_Position = vec4(pos, 0.0, 1.0); }
-        )";
-        static const char* flashFS = R"(
-            #version 330 core
-            uniform float alpha;
-            out vec4 color;
-            void main() { color = vec4(1.0, 0.0, 0.0, alpha); }
-        )";
-        
-        static GLuint flashProg = 0;
-        if (flashProg == 0) {
-            GLuint vs = glCreateShader(GL_VERTEX_SHADER);
-            glShaderSource(vs, 1, &flashVS, nullptr);
-            glCompileShader(vs);
-            GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
-            glShaderSource(fs, 1, &flashFS, nullptr);
-            glCompileShader(fs);
-            flashProg = glCreateProgram();
-            glAttachShader(flashProg, vs);
-            glAttachShader(flashProg, fs);
-            glLinkProgram(flashProg);
-            glDeleteShader(vs);
-            glDeleteShader(fs);
-        }
-        
-        glUseProgram(flashProg);
-        GLint loc = glGetUniformLocation(flashProg, "alpha");
-        glUniform1f(loc, damageFlashAlpha);
-        
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        
-        glDeleteVertexArrays(1, &flashVAO);
-        glDeleteBuffers(1, &flashVBO);
-        
-        // Fade out
-        damageFlashAlpha -= 0.02f;
-        if (damageFlashAlpha < 0.0f) damageFlashAlpha = 0.0f;
-    }
 }
 
 void cleanupHUD() {
-    glDeleteTextures(1, &weaponTex);
+    for (int i = 0; i < 4; i++) cleanupWeapon(weapons[i]);
     glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);
     glDeleteProgram(prog);

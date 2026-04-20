@@ -17,3 +17,4 @@ echo ""
 echo "Build succeeded! Running build/main ..."
 echo ""
 ./build/main
+

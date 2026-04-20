@@ -1,0 +1,5 @@
+# Per-face texture configuration
+# Format: x y N S E W
+# Texture indices: 0-3 (matching wall textures in main map)
+
+12 4 1 0 0 0

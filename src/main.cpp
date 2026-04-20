@@ -4,44 +4,47 @@
 
 #include "core/window.h"
 #include "core/input.h"
+#include "core/game_state.h"
 #include "map/map.h"
 #include "player/player.h"
+#include "projectile/projectile.h"
 #include "renderer/map_renderer.h"
+#include "renderer/minimap_renderer.h"
 #include "renderer/hud_renderer.h"
-#include "entities/projectile.h"
-#include "entities/enemy.h"
-
-const int SCREEN_W = 800;
-const int SCREEN_H = 600;
+#include "renderer/projectile_renderer.h"
+#include "renderer/menu_renderer.h"
+#include "settings/settings.h"
+#include "circular_sprite/circular_sprite.h"
 
 int main() {
+    settings::load("src/settings/config.json", "src/settings/keybind.json");
+
+    const int SCREEN_W = settings::getInt("screen_width",  960);
+    const int SCREEN_H = settings::getInt("screen_height", 720);
+
     window::initGLFW();
+    glfwSwapInterval(1);
     GLFWwindow* window = window::createWindow(SCREEN_W, SCREEN_H, "Raycaster");
     window::initGLAD();
     glViewport(0, 0, SCREEN_W, SCREEN_H);
 
-    player::initPlayer();
-    renderer::initRenderer(SCREEN_W, SCREEN_H);
-    hud::initHUD(SCREEN_W, SCREEN_H);
-
-    // Load map AFTER sprite registry is initialized
     if (!map::loadMap("resource/maps/map.txt")) {
         fprintf(stderr, "Could not load map, exiting.\n");
         glfwTerminate();
         return -1;
     }
-    
-    // Upload map texture to GPU after loading
-    renderer::uploadMapTexture();
 
-    printf("=== Raycaster Controls ===\n");
-    printf("W/S or Up/Down   - Move forward/backward\n");
-    printf("A/D              - Strafe left/right\n");
-    printf("Left/Right arrow - Rotate\n");
-    printf("M                - Toggle minimap\n");
-    printf("L                - Toggle lighting\n");
-    printf("ESC              - Quit\n");
-    printf("==========================\n");
+    player::initPlayer();
+    renderer::initRenderer(SCREEN_W, SCREEN_H);
+    minimap::initMinimap(SCREEN_W, SCREEN_H);
+    hud::initHUD(SCREEN_W, SCREEN_H);
+    projectile_renderer::initProjectileRenderer(SCREEN_W, SCREEN_H);
+    menu_renderer::initMenu(SCREEN_W, SCREEN_H);
+    projectile::initProjectiles();
+    circular_sprite::init(SCREEN_W, SCREEN_H);
+
+    game::setState(GameState::MAIN_MENU);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 
     double lastTime = glfwGetTime();
 
@@ -49,21 +52,53 @@ int main() {
         double now = glfwGetTime();
         float deltaTime = (float)(now - lastTime);
         lastTime = now;
-        if (deltaTime > 0.05f) deltaTime = 0.05f;
+        float maxDt = settings::getFloat("max_delta_time", 0.05f);
+        if (deltaTime > maxDt) deltaTime = maxDt;
 
-        input::processInput(window, deltaTime);
-        projectile::updateProjectiles(deltaTime);
-        enemy::updateEnemies(deltaTime);
+        game::updateMenuInput(window);
 
-        renderer::renderFrame();
-        hud::renderWeapon();
+        switch (game::getState()) {
+
+        case GameState::MAIN_MENU:
+            glClear(GL_COLOR_BUFFER_BIT);
+            menu_renderer::renderMainMenuSelect(game::menuSelection());
+            break;
+
+        case GameState::PAUSED: {
+            renderer::RenderState rs = renderer::buildRenderState();
+            renderer::renderFrame(rs);
+            projectile_renderer::renderProjectiles(rs);
+            minimap::renderMinimap(rs);
+            hud::renderWeapon();
+            menu_renderer::renderPauseMenu(game::pauseSelection());
+            break;
+        }
+
+        case GameState::PLAYING: {
+            input::processInput(window, deltaTime);
+            projectile::updateProjectiles(deltaTime);
+            circular_sprite::update(deltaTime);
+
+            renderer::RenderState rs = renderer::buildRenderState();
+            renderer::renderFrame(rs);
+            circular_sprite::render(rs);
+            projectile_renderer::renderProjectiles(rs);
+            minimap::renderMinimap(rs);
+            hud::renderWeapon();
+            break;
+        }
+        }
 
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
-    renderer::cleanupRenderer();
+    circular_sprite::cleanup();
+    menu_renderer::cleanupMenu();
     hud::cleanupHUD();
+    projectile_renderer::cleanupProjectileRenderer();
+    minimap::cleanupMinimap();
+    renderer::cleanupRenderer();
     glfwTerminate();
     return 0;
 }

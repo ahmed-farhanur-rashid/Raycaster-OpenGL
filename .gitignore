@@ -1,5 +1,6 @@
 # Build and binary artifacts
 mingw64/*
+alt-source/*
 *.exe
 *.lib
 *.o
@@ -26,5 +27,4 @@ mingw64/*
 
 # Ignore some markdown files
 
-build/
-.idea/
+CG_Lab_Project_Guideline latest.docx.md
